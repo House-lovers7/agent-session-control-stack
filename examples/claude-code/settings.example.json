@@ -1,0 +1,16 @@
+{
+  "_comment": "agent-session-control-stack: example env for running session-health + compact-plus together. Merge the env block into your ~/.claude/settings.json. Values shown for SESSION_HEALTH_* are the upstream defaults for the main threshold knobs; omit them to track upstream. Two further knobs exist upstream (SESSION_HEALTH_CACHE_DELTA, SESSION_HEALTH_CUMULATIVE) - leave them unset unless you know why you need them.",
+  "env": {
+    "SESSION_HEALTH_HOT_REQS": "80",
+    "SESSION_HEALTH_HOT_RATIO": "150",
+    "SESSION_HEALTH_WARN_REQS": "50",
+    "SESSION_HEALTH_WARN_RATIO": "100",
+    "SESSION_HEALTH_REWARN_EVERY": "20",
+
+    "_comment_compact_plus": "Empty backends = skip LLM state-file generation (the default 'claude -p' is a paid API call on every compact). Transcript backup and recovery injection still work. Opt in explicitly if you want automated state files.",
+    "COMPACT_PLUS_PRIMARY_BACKEND": "",
+    "COMPACT_PLUS_FALLBACK_BACKEND": ""
+  },
+  "_comment_pxpipe": "pxpipe is enabled per-launch, not via settings.json. Start the proxy with 'npx pxpipe-proxy', then launch Claude Code with 'ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'. Read docs/claude-code/pxpipe-safety.md BEFORE enabling. Do NOT put ANTHROPIC_BASE_URL in settings env unless the proxy runs permanently.",
+  "_comment_reminder": "Do not install a statusline that writes the compact-plus warn marker. Without the marker producer, the 60% compact reminder never fires and session-health remains the single compact decider. No other configuration is needed."
+}

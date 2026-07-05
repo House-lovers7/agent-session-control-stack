@@ -1,50 +1,80 @@
 # Agent Session Control Stack
 
-**Status: Phase 0 — design documents only.** Public-facing docs and examples land in Phase 1.
+A reference architecture for long-running AI coding agent sessions.
 
-Agent Session Control Stack is a reference architecture for long-running AI coding agents.
+日本語版: [README.ja.md](README.ja.md)
 
-It separates the problem into four layers:
+## Problem
 
-1. **Compression** — shrink bulky input context ([pxpipe](https://github.com/teamchong/pxpipe))
-2. **Health detection** — detect when a session has gone hot and let the model itself propose `/compact`, a fresh session, or delegation ([claude-code-session-health](https://github.com/House-lovers7/claude-code-session-health))
-3. **Checkpointing** — preserve plan, decisions, failed attempts, and worker topology before compaction ([compact-plus](https://github.com/u-ichi/compact-plus))
-4. **Recovery** — resume safely: *summary is hypothesis, source is truth* (compact-plus + adapter)
+Long-running AI coding agents fail in predictable ways:
 
-It does **not** replace pxpipe, session-health, or compact-plus. It documents how to compose them safely for Claude Code, and how to adapt the same pattern to Codex using AGENTS.md + a state/handoff protocol.
+- context bloat
+- cache re-read waste
+- compact-induced state loss
+- repeated failed approaches
+- lost plan / worker topology
+- unsafe recovery after summarization
 
-Agent Session Control Stack は、長時間 AI コーディングエージェントのための参照アーキテクチャです。pxpipe / session-health / compact-plus を置き換えるものではありません。それぞれの責務を分離し、Claude Code では hooks/plugin として、Codex では AGENTS.md / state directory / checkpoint-handoff protocol として再現する方法を示します。
+## Thesis
 
-## Design documents (Phase 0)
+Do not treat this as one problem. Separate it into four layers:
 
-| Doc | Contents |
-|---|---|
-| [docs/architecture.md](docs/architecture.md) | 4-layer model, per-layer responsibilities, the single-decider rule for compaction, pxpipe safety boundary |
-| [docs/hook-responsibilities.md](docs/hook-responsibilities.md) | Claude Code hook × tool matrix, conflict analysis, env conventions |
-| [docs/adapter-interface.md](docs/adapter-interface.md) | Runtime-agnostic layer contracts; Claude Code vs Codex bindings |
-| [docs/codex/agents-md-draft.md](docs/codex/agents-md-draft.md) | Codex AGENTS.md proposal, `.agent-session/` layout, checkpoint/handoff protocol |
-| [docs/implementation-plan.md](docs/implementation-plan.md) | Phase split, division of labor, target file layout |
-| [docs/acceptance-criteria.md](docs/acceptance-criteria.md) | What "the integration works" means, per phase |
-| [docs/risk-register.md](docs/risk-register.md) | Risks, **unverified points, and withdrawal criteria** |
-| [docs/measurement-plan.md](docs/measurement-plan.md) | Before/after metrics and experiment protocol |
+1. **Compression** — shrink bulky input context
+2. **Health Detection** — notice when a session has gone hot, and intervene through the model itself
+3. **Checkpointing** — preserve plan, decisions, failed attempts, and worker topology before context is lost
+4. **Recovery** — resume safely: *summary is hypothesis, source is truth*
 
-## Honest limits
+The layer contracts are independent — each can be adopted or removed on its own. (One binding-level caveat: on Claude Code, Checkpoint and Recovery both ship in compact-plus, so they are adopted and removed as a pair.)
 
-- Individual measurements exist upstream (pxpipe: ~59–70% end-to-end bill reduction; session-health: median 66% in-session reduction from `/compact`, normalized cacheRead/output 233x→83x — consistency evidence, not causality). **The combined effect of all three is unmeasured.** See the risk register before adopting.
-- pxpipe is lossy by design. Byte-exact values (hashes, IDs, secrets) must stay text; see the safety boundary in [docs/architecture.md](docs/architecture.md).
+## Existing projects
 
-## Roadmap
+- [pxpipe](https://github.com/teamchong/pxpipe) (teamchong): compression layer
+- [claude-code-session-health](https://github.com/House-lovers7/claude-code-session-health) (House-lovers7): health detection layer
+- [compact-plus](https://github.com/u-ichi/compact-plus) (u-ichi): checkpoint/recovery layer
 
-- **Phase 0** — design documents (this commit)
-- **Phase 1** — docs-only reference architecture (public README, recommended stacks, examples, templates)
-- **Phase 2** — self-verification on real sessions (before/after measurement)
-- **Phase 3** — design review, upstream collaboration drafts
-- **Phase 4+** — config generator / doctor script / measurement tool / upstream proposals — only if Phase 2 clears the withdrawal criteria
+This repository does **not** replace them and bundles none of their code. It documents how to compose them safely.
+
+## Claude Code reference stack
+
+> - Let **session-health** decide when the session is hot.
+> - Let **compact-plus** preserve and restore working state around compaction.
+> - Let **pxpipe** reduce bulky input context, but never compress byte-exact values.
+
+The one rule that keeps the composition from conflicting: both session-health and compact-plus can tell the model to compact, on different criteria. This stack designates a **single decider** — session-health — and disables the compact-plus reminder *by construction*: the reminder only fires if an external statusline writes a warn-marker file, so not installing that producer turns it off while compact-plus's state capture and recovery keep working untouched.
+
+- Setup, hook ownership, env conventions: [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md)
+- Config snippet: [examples/claude-code/settings.example.json](examples/claude-code/settings.example.json)
+
+## Codex reference stack
+
+Codex has no compaction lifecycle hooks, so this stack does not emulate them. The same Checkpoint/Recovery contracts become a **session handoff protocol**: an `AGENTS.md` that tells the agent to read `.agent-session/handoff.md` and state files before working, log decisions and failed attempts as it works, and write a handoff before stopping. The checkpoint snapshot uses the same 10 sections as a compact-plus state file, so handoffs can cross runtimes.
+
+This is a weaker guarantee than hooks — protocol adherence instead of deterministic execution — and is stated as such.
+
+- Design: [docs/codex/adapter-design.md](docs/codex/adapter-design.md)
+- Drop-in protocol: [examples/codex/AGENTS.md](examples/codex/AGENTS.md)
+- Templates: [templates/](templates/)
+
+## Safety
+
+pxpipe is the strongest and highest-risk layer. It is lossy by design: in upstream's own tests, a 12-character hex string in a dense image was read back correctly 13/15 times by Fable 5 and 0/15 by Opus 4.8 — and misreads are silent confabulation, not errors. Byte-exact values (hashes, IDs, secrets, paths, migration names, deploy targets) must stay text, and per-category exclusions are **not configurable** via `npx` today; the practical control is routing byte-exact work to non-allowlisted models.
+
+Read [docs/claude-code/pxpipe-safety.md](docs/claude-code/pxpipe-safety.md) before enabling pxpipe.
+
+## Measurement
+
+Upstream projects publish their own numbers (pxpipe: ~59–70% end-to-end bill reduction in its README snapshots; session-health: median 66% in-session context reduction from `/compact`, normalized cacheRead/output 233x→83x — framed by its author as consistency evidence, not causality). **The combined effect of running all three together is unmeasured.**
+
+This repository defines what "it works" would mean before claiming it: metrics, experiment protocol, and explicit withdrawal criteria — if post-compact drift, re-proposed rejected options, repeated failures, and per-deliverable token cost don't improve, the integration is just added complexity.
+
+- [docs/measurement-plan.md](docs/measurement-plan.md) · [docs/risk-register.md](docs/risk-register.md) (risks, unverified points, withdrawal criteria)
 
 ## Attribution
 
-See [ATTRIBUTION.md](ATTRIBUTION.md). This repository composes ideas from pxpipe (teamchong), claude-code-session-health (House-lovers7), and compact-plus (u-ichi), with respect and without claiming ownership.
+This repository is an integration/reference architecture. It does not claim ownership of the underlying ideas or implementations. Credits and details: [ATTRIBUTION.md](ATTRIBUTION.md). If you are an upstream author and find anything misrepresented, please open an issue — corrections take priority.
 
-## License
+## More
 
-MIT — see [LICENSE](LICENSE).
+- Design originals (Phase 0, Japanese): [architecture](docs/architecture.md) · [hook responsibilities](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md draft](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
+- Roadmap: Phase 0 design ✅ → Phase 1 docs-only reference architecture (this set) → Phase 2 before/after measurement → Phase 3 upstream collaboration → Phase 4+ tooling (generator / doctor / measurement), only if Phase 2 clears the withdrawal criteria
+- License: MIT — [LICENSE](LICENSE)

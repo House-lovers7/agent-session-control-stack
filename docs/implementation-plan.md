@@ -1,6 +1,6 @@
 # Implementation Plan — フェーズ分割と分担
 
-> Phase 0 設計原本。実装は行わず、各フェーズの成果物・担当・停止条件を定義する。
+> Phase 0 設計原本 / **内部の作業計画メモ**（authoring workflow）。公開ドキュメントの正典は README と docs/claude-code/・docs/codex/。実装は行わず、各フェーズの成果物・担当・停止条件を定義する。
 
 ## 0. 分担原則
 
@@ -63,8 +63,8 @@ agent-session-control-stack/
 ## Phase 3: 設計レビューと発信準備（Fable）
 
 - 設計の穴の総点検（測定結果を受けた契約・閾値の見直し）
-- OSS 作者への共有文面（upstream 提案）と Zenn 記事構成の確定
-- public 化・X・Zenn・作者への Issue/Discussion は **すべて external_send として個別承認**
+- OSS 作者への共有文面（upstream 提案）と解説記事構成の確定
+- 公開・SNS 投稿・作者への Issue/Discussion などの対外コミュニケーションは、**すべて人間の明示承認を経てから実行する**
 
 ## Phase 4 以降（ROADMAP、着手判断は Phase 2 の結果次第）
 

@@ -27,7 +27,9 @@
 ```
 契約:
   入力: セッションの消費シグナル
-  出力: ok / warn / hot の判定と、hot 時の介入（エージェント自身への行動提案）
+  出力: ok / warn / hot の判定と、hot 時の介入
+        （介入の様式 — エージェント自身への行動提案か、別の方式か — は binding の詳細。
+          Claude Code binding は閉ループ提案方式を採る）
   不変条件:
     - 「畳む」判断を出すのはこの層だけ（single decider）
     - 介入は小さく・低頻度（注入トークン予算を守る）
@@ -65,7 +67,7 @@
 | 層 | Claude Code binding | Codex binding |
 |---|---|---|
 | Compression | pxpipe（local proxy、`ANTHROPIC_BASE_URL` 差し替え） | **移植しない（Phase 0 判断）**。CLI 接続・API 形式・tool 定義の扱いが未検証。思想（bulky context を主文脈に入れない）のみ AGENTS.md の運用規律として反映 |
-| Health | session-health（UserPromptSubmit hook + transcript scan） | 代理シグナル + 自己申告。transcript メトリクス相当が無いため、経過時間 / tool call 数 / diff 量 / テスト失敗回数 / prompt 数を根拠に、AGENTS.md が checkpoint 更新をトリガーする。wrapper（`codex-session run` による自動監視）は Phase 2+ |
+| Health | session-health（UserPromptSubmit hook + transcript scan） | 代理シグナル + 自己申告。session-health が測る指標面に相当するものは未検証（risk-register 参照）のため、経過時間 / tool call 数 / diff 量 / テスト失敗回数 / prompt 数を根拠に、AGENTS.md が checkpoint 更新をトリガーする。wrapper（`codex-session run` による自動監視）は Phase 2+ |
 | Checkpoint | compact-plus（PreCompact hook、自動） | `.agent-session/state/` への手続き的書き込み（AGENTS.md protocol、エージェント自身が実行） |
 | Recovery | compact-plus（PostCompact marker → UserPromptSubmit 注入、自動） | handoff.md を新セッションの読み込み起点にする（AGENTS.md protocol） |
 
@@ -79,6 +81,8 @@
 | 保証水準 | 強（イベント駆動で必ず走る） | 弱（protocol adherence は測定対象。risk-register 参照） |
 
 この非対称性は隠さず明記する。Codex binding は「同じ保証」ではなく「同じ契約の弱い実装」である。
+
+また、契約としての 4 層は独立だが、Claude Code binding では Checkpoint と Recovery を同一 plugin（compact-plus）が実装するため、binding レベルではこの 2 層は対で導入・撤去される。
 
 ## 5. 拡張の置き場所
 

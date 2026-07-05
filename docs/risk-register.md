@@ -19,9 +19,10 @@
 
 1. **Codex CLI に pxpipe 相当を透過的に挟めるか** — 未検証。GPT path の tool 定義は native JSON・`cache_control` 非使用という README 記述はあるが、Codex CLI の接続経路・認証・互換性は確認していない。Phase 0 では Compression 層を Codex に移植しない判断
 2. **Codex で Claude Code 並みの Checkpoint/Recovery がどこまで再現できるか** — protocol 遵守率は測定するまで不明
-3. **3 層併用の相乗効果** — 各ツールの個別実測（pxpipe: 請求 59〜70% 減、session-health: compact でセッション内中央値 66% 削減・正規化比 233x→83x）はあるが、**併用時の合算効果・干渉は未測定**
+3. **3 層併用の相乗効果** — 各ツールの個別実測（pxpipe: 請求 59〜70% 減、session-health: compact でセッション内中央値 66% 削減・正規化比 233x→83x — いずれも作者が因果ではなく整合性の証拠と明記）はあるが、**併用時の合算効果・干渉は未測定**
 4. **使用量上限（使用率表示）への効果** — 上限の算定は入力トークンだけで決まるとは限らない。「pxpipe で 70% 削減 = 使用率も 70% 改善」とは言えない
 5. **`COMPACT_WARN_THRESHOLD` の境界挙動**（0 / 100 / 空） — marker 生成器が外部にあるため plugin 単体では検証不能（本 stack では生成器を入れないので実害なし）
+6. **Codex のセッションログが Health 層の指標面になり得るか** — Codex CLI はセッション記録を永続化するが、session-health が測る cacheRead/output 相当の usage 情報を取り出せるかは未確認。確認できれば Codex binding の Health 層を代理シグナルから実測に格上げできる
 
 ## 3. 撤退基準
 

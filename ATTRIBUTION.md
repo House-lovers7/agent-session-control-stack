@@ -11,6 +11,8 @@ Credits:
 
 This project aims to document how these ideas can be composed safely across Claude Code and Codex.
 
+**Disclosure**: claude-code-session-health and this repository share the same author. The "single compact decider = session-health" recommendation is argued on technical grounds — the compact-plus reminder's warn-marker producer is external to its plugin by upstream design — not on authorship. See [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md) for the reasoning; challenges to it are welcome.
+
 ---
 
 本リポジトリは、上記の各 OSS を置き換えるものではありません。
