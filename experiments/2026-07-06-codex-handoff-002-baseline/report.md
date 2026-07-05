@@ -53,7 +53,17 @@ consistency evidence only, not causality (docs/measurement-plan.md §2).
 
 ## Result
 
-<!-- Filled by `scripts/ascs.py finish`. -->
+| Metric | Value |
+|---|---:|
+| resume_time_seconds | 143 |
+| missed_state_files | 0 |
+| repeated_failures | 0 |
+| rejected_option_relapses | 0 |
+| human_corrections | 0 |
+
+Score: **PASS**
+
+Failed criteria: 0
 
 ## Notes
 

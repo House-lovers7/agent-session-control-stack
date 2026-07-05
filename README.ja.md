@@ -61,6 +61,10 @@ pxpipe は最も強力で、最も注意が必要な層です。設計上 lossy 
 
 pxpipe を有効化する前に [docs/claude-code/pxpipe-safety.md](docs/claude-code/pxpipe-safety.md) を読んでください。
 
+小さな作業、所有者が曖昧な運用、byte-exact な作業、または別の承認ゲートがない
+workflow では、この stack を追加する前に
+[docs/when-not-to-use.md](docs/when-not-to-use.md) を読んでください。
+
 ## Measurement
 
 各 OSS には個別の実測があります（pxpipe: README 記載のスナップショットで請求ベース約 59〜70% 削減 / session-health: `/compact` でセッション内中央値 66% 削減、正規化 cacheRead/output 比 233x→83x — 作者自身が「因果ではなく整合性の証拠」と明記）。**3 つを併用したときの合成効果は、まだ実証的に検証されていません。**

@@ -61,6 +61,10 @@ pxpipe is the strongest and highest-risk layer. It is lossy by design: in upstre
 
 Read [docs/claude-code/pxpipe-safety.md](docs/claude-code/pxpipe-safety.md) before enabling pxpipe.
 
+For smaller jobs, unclear ownership, byte-exact work, or workflows without a
+separate approval gate, read [docs/when-not-to-use.md](docs/when-not-to-use.md)
+before adding this stack.
+
 ## Measurement
 
 Upstream projects publish their own numbers (pxpipe: ~59–70% end-to-end bill reduction in its README snapshots; session-health: median 66% in-session context reduction from `/compact`, normalized cacheRead/output 233x→83x — framed by its author as consistency evidence, not causality). **The composition effect — running all three together — has not been empirically validated yet.**

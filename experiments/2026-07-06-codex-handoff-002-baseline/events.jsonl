@@ -1,1 +1,3 @@
 {"event": "preregistration", "note": "Task, done definition, interruption design, and judgment rules written to report.md before any session work", "timestamp": "2026-07-05T17:30:12+00:00"}
+{"event": "interruption_reached", "note": "Draft docs/when-not-to-use.md completed. README links intentionally not added yet.", "timestamp": "2026-07-05T17:40:28+00:00"}
+{"event": "resume_completed", "note": "Resume completed. First progressive edit at 2026-07-06 02:42:51. resume_time_seconds=143. Limitation: baseline resume inspected events.jsonl, which contained a minimal interruption note.", "timestamp": "2026-07-05T17:45:08+00:00"}
