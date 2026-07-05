@@ -62,9 +62,34 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def markdown_report(data: dict[str, Any]) -> str:
+def report_section(existing_report: str | None, heading: str, next_heading: str | None) -> str | None:
+    if not existing_report:
+        return None
+    start_marker = f"## {heading}"
+    start = existing_report.find(start_marker)
+    if start == -1:
+        return None
+    content_start = existing_report.find("\n", start)
+    if content_start == -1:
+        return None
+    content_start += 1
+    if next_heading:
+        end = existing_report.find(f"\n## {next_heading}", content_start)
+        if end == -1:
+            return None
+    else:
+        end = len(existing_report)
+    content = existing_report[content_start:end].strip()
+    if "<!--" in content and "-->" in content:
+        return None
+    return content or None
+
+
+def markdown_report(data: dict[str, Any], existing_report: str | None = None) -> str:
     metrics = data.get("metrics", {})
     score = data.get("score", {})
+    task_summary = report_section(existing_report, "Task Summary", "Events")
+    notes = report_section(existing_report, "Notes", None)
     lines = [
         "# Experiment Report",
         "",
@@ -77,7 +102,8 @@ def markdown_report(data: dict[str, Any]) -> str:
         "",
         "## Task Summary",
         "",
-        "<!-- Fill in the task, done definition, and stack condition before judging outcomes. -->",
+        task_summary
+        or "<!-- Fill in the task, done definition, and stack condition before judging outcomes. -->",
         "",
         "## Events",
         "",
@@ -118,7 +144,7 @@ def markdown_report(data: dict[str, Any]) -> str:
         [
             "## Notes",
             "",
-            "<!-- One to three lines of qualitative observations. -->",
+            notes or "<!-- One to three lines of qualitative observations. -->",
             "",
         ]
     )
@@ -288,7 +314,9 @@ def finish_experiment(args: argparse.Namespace) -> int:
     data["finished_at"] = now_iso()
     data["score"] = status_for_metrics(metrics)
     write_json(experiment_json, data)
-    (experiment_dir / "report.md").write_text(markdown_report(data), encoding="utf-8")
+    report_path = experiment_dir / "report.md"
+    existing_report = report_path.read_text(encoding="utf-8") if report_path.exists() else None
+    report_path.write_text(markdown_report(data, existing_report), encoding="utf-8")
     print(f"PASS finished {experiment_dir}")
     return 0
 
@@ -311,7 +339,9 @@ def score_experiment(args: argparse.Namespace) -> int:
     score = status_for_metrics(typed_metrics)
     data["score"] = score
     write_json(experiment_json, data)
-    (experiment_dir / "report.md").write_text(markdown_report(data), encoding="utf-8")
+    report_path = experiment_dir / "report.md"
+    existing_report = report_path.read_text(encoding="utf-8") if report_path.exists() else None
+    report_path.write_text(markdown_report(data, existing_report), encoding="utf-8")
 
     print("| Metric | Value | Criterion |")
     print("|---|---:|---|")

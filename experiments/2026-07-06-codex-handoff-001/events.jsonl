@@ -1,0 +1,3 @@
+{"event": "recovery-start", "note": "Reviewed AGENTS.md protocol and repository state before continuing Phase 2 evidence work", "timestamp": "2026-07-05T16:42:36+00:00"}
+{"event": "state-check", "note": "doctor confirmed README, ATTRIBUTION, Codex AGENTS, Claude Code settings JSON, checkpoint sections, and no top-level codex/ or claude-code/", "timestamp": "2026-07-05T16:42:36+00:00"}
+{"event": "checkpoint", "note": "Experiment 001 initialized as lightweight first evidence for Codex handoff protocol", "timestamp": "2026-07-05T16:42:36+00:00"}
