@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-07-05T16:29:19+00:00",
+  "events_file": "events.jsonl",
+  "finished_at": "2026-07-05T16:29:28+00:00",
+  "metrics": {
+    "human_corrections": 1,
+    "missed_state_files": 0,
+    "rejected_option_relapses": 0,
+    "repeated_failures": 0,
+    "resume_time_seconds": 180
+  },
+  "name": "smoke-test",
+  "report_file": "report.md",
+  "runtime": "codex",
+  "score": {
+    "failed_criteria": [],
+    "failed_criteria_count": 0,
+    "scored_at": "2026-07-05T16:31:52+00:00",
+    "status": "PASS"
+  },
+  "target_repo": "."
+}

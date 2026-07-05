@@ -1,0 +1,93 @@
+# Measurement Harness
+
+`scripts/ascs.py` is a lightweight Phase 2 measurement helper. It makes manual
+experiments easier to run without integrating hooks, starting proxies, or
+launching Codex or Claude Code.
+
+## What It Automates
+
+- Repository readiness checks with `doctor`.
+- Experiment directory creation under `experiments/`.
+- `experiment.json`, `events.jsonl`, and `report.md` creation.
+- Manual event recording as JSON Lines.
+- Final metric capture.
+- PASS / PARTIAL / FAIL scoring for the narrow recovery-quality criteria.
+
+## What It Does Not Automate
+
+- pxpipe proxy startup.
+- Claude Code hook installation or execution.
+- compact-plus backend execution.
+- Codex wrapper execution.
+- Transcript JSONL parsing.
+- Dashboards.
+- Upstream PRs, issue creation, publish, deploy, or any network action.
+
+## Usage
+
+```bash
+python scripts/ascs.py doctor
+```
+
+```bash
+python scripts/ascs.py init \
+  --name codex-handoff-001 \
+  --runtime codex \
+  --target-repo /path/to/target
+```
+
+```bash
+python scripts/ascs.py record \
+  --experiment experiments/2026-07-06-codex-handoff-001 \
+  --event checkpoint \
+  --note "decision-log and failed-attempts updated"
+```
+
+```bash
+python scripts/ascs.py finish \
+  --experiment experiments/2026-07-06-codex-handoff-001 \
+  --resume-time 180 \
+  --missed-state-files 0 \
+  --repeated-failures 0 \
+  --rejected-option-relapses 0 \
+  --human-corrections 1
+```
+
+```bash
+python scripts/ascs.py score \
+  --experiment experiments/2026-07-06-codex-handoff-001
+```
+
+## Exit Codes
+
+- `doctor` exits `1` only when a `FAIL` check exists. `PASS` and `WARN`
+  findings do not fail the command.
+- `init` exits `1` if the experiment directory already exists.
+- `record`, `finish`, and `score` exit `1` if the requested experiment files are
+  missing or malformed.
+- `score` prints `PASS`, `PARTIAL`, or `FAIL`, but the command itself exits `0`
+  when scoring completes successfully.
+
+## Score Criteria
+
+`score` uses the following checks:
+
+- `missed_state_files == 0`
+- `repeated_failures == 0`
+- `rejected_option_relapses == 0`
+- `human_corrections <= 1`
+
+Result:
+
+- `PASS`: all criteria pass.
+- `PARTIAL`: one or two criteria miss.
+- `FAIL`: three or more criteria miss.
+
+## Relationship To Withdrawal Criteria
+
+The harness does not prove causality. It only makes the manual evidence in
+`docs/measurement-plan.md` easier to collect consistently. If repeated
+experiments show no improvement in recovery quality, rejected-option relapse,
+or repeated-failure avoidance, the integration should not proceed to heavier
+tooling such as generators, doctor automation beyond this script, dashboards,
+or upstream proposals.
