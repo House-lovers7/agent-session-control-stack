@@ -9,7 +9,11 @@
 
 ## Task Summary
 
-<!-- Fill in the task, done definition, and stack condition before judging outcomes. -->
+Harness smoke test. The task was exercising `scripts/ascs.py` end to end
+(init → record → finish → score) against this repository. Done definition:
+all four commands complete and produce the expected files. The metrics below
+validate the harness workflow only — this run is not a before/after
+measurement and not evidence for the stack or the handoff protocol.
 
 ## Events
 

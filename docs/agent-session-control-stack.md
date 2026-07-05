@@ -105,7 +105,9 @@ Not implemented in Phase 1:
 - compact-plus backend execution.
 - pxpipe proxy startup.
 - Codex wrapper or automatic health detection.
-- Measurement collection scripts.
+- Measurement collection scripts. (`scripts/ascs.py` was added later as the
+  Phase 2 manual measurement harness — see
+  [measurement-harness.md](measurement-harness.md).)
 - GitHub/Gitea PR creation, push, deploy, publish, or upstream communication.
 
 ## Source Documents

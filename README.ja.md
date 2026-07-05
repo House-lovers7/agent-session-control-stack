@@ -68,13 +68,16 @@ pxpipe を有効化する前に [docs/claude-code/pxpipe-safety.md](docs/claude-
 本リポジトリは、効果を主張する前に「効いている」の定義を先に固定します。指標・実験手順・明示的な撤退基準 — compact 後の迷走、却下案の再提案、同じ失敗の反復、1 成果物あたりのトークンコストが改善しなければ、この統合は複雑化に過ぎません。
 
 - [docs/measurement-plan.md](docs/measurement-plan.md) · [docs/risk-register.md](docs/risk-register.md)（リスク・未検証点・撤退基準）
+- [docs/measurement-harness.md](docs/measurement-harness.md) — `scripts/ascs.py`（repo 形状チェック + 手動の実験記録ヘルパー）。Phase 4+ の自動 tooling とは別物で、[experiments/](experiments/) にある既存ランは harness 自体の動作検証のみ
 
 ## Attribution
 
 本リポジトリは統合・参照アーキテクチャであり、元のアイデアや実装の所有権を主張しません。クレジットの詳細は [ATTRIBUTION.md](ATTRIBUTION.md)。upstream 作者の方で記述の誤りを見つけた場合は issue を立ててください。訂正を最優先します。
 
+**開示**: claude-code-session-health と本リポジトリは同一 maintainer です。上記の single decider 推奨は、作者都合ではなく技術的な責務分離に基づくものです。根拠は [ATTRIBUTION.md](ATTRIBUTION.md) と [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md) を参照してください。指摘・反論を歓迎します。
+
 ## More
 
 - 設計原本（Phase 0、日本語）: [architecture](docs/architecture.md) · [hook 責務分離](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md 案](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
-- Roadmap: Phase 0 設計 ✅ → Phase 1 docs-only 参照アーキテクチャ（本セット）→ Phase 2 実セッション before/after 測定 → Phase 3 upstream 協調 → Phase 4+ ツール化（generator / doctor / measurement、Phase 2 が撤退基準をクリアした場合のみ）
+- Roadmap: Phase 0 設計 ✅ → Phase 1 docs-only 参照アーキテクチャ（本セット）→ Phase 2 実セッション before/after 測定（harness は準備済み — `scripts/ascs.py`。before/after データは未取得）→ Phase 3 upstream 協調 → Phase 4+ ツール化（generator / 導入状態 doctor / 測定自動化、Phase 2 が撤退基準をクリアした場合のみ）
 - License: MIT — [LICENSE](LICENSE)
