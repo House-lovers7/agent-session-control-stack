@@ -8,12 +8,24 @@ launching Codex or Claude Code.
 
 - Repository readiness checks with `doctor`.
 - Experiment directory creation under `experiments/`.
+  (`doctor` and `init` are anchored to the repository containing the script,
+  not to the current working directory, so the commands can be run from
+  anywhere.)
 - `experiment.json`, `events.jsonl`, and `report.md` creation.
 - Manual event recording as JSON Lines.
 - Final metric capture.
 - PASS / PARTIAL / FAIL scoring for the narrow recovery-quality criteria.
   `score` is read-only; `finish` is the command that writes final metrics and
   updates `report.md`.
+
+`finish` regenerates `report.md`. Only the Task Summary and Notes sections are
+preserved from the existing report — and only if they contain real content
+rather than the original placeholder comment; anything hand-written in other
+sections is discarded. Re-running `finish` overwrites the stored metrics with
+the new arguments and refreshes `finished_at` and `scored_at`. If Task Summary
+is still empty or a placeholder, `finish` prints a WARN, because judgment
+criteria are supposed to be written before outcomes are judged
+([measurement-plan.md](measurement-plan.md)).
 
 ## What It Does Not Automate
 

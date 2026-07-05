@@ -47,7 +47,7 @@ def today_slug() -> str:
 
 
 def repo_root() -> Path:
-    return Path.cwd()
+    return Path(__file__).resolve().parents[1]
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -60,6 +60,14 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def is_placeholder(content: str) -> bool:
+    return (
+        content.startswith("<!--")
+        and content.endswith("-->")
+        and content.count("<!--") == 1
+    )
 
 
 def report_section(existing_report: str | None, heading: str, next_heading: str | None) -> str | None:
@@ -80,7 +88,7 @@ def report_section(existing_report: str | None, heading: str, next_heading: str 
     else:
         end = len(existing_report)
     content = existing_report[content_start:end].strip()
-    if "<!--" in content and "-->" in content:
+    if is_placeholder(content):
         return None
     return content or None
 
@@ -323,6 +331,12 @@ def finish_experiment(args: argparse.Namespace) -> int:
     write_json(experiment_json, data)
     report_path = experiment_dir / "report.md"
     existing_report = report_path.read_text(encoding="utf-8") if report_path.exists() else None
+    if report_section(existing_report, "Task Summary", "Events") is None:
+        print(
+            "WARN Task Summary in report.md is empty or still a placeholder; "
+            "judgment criteria should be written before finishing "
+            "(docs/measurement-plan.md)"
+        )
     report_path.write_text(markdown_report(data, existing_report), encoding="utf-8")
     print(f"PASS finished {experiment_dir}")
     return 0

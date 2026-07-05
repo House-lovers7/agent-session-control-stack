@@ -20,3 +20,31 @@ with judgment criteria written before the work starts — see
 [docs/measurement-checklist.md](../docs/measurement-checklist.md).
 Until such runs exist here, treat every `Score: PASS` in this directory as
 "the harness works", not "the stack works".
+
+## Running a real before/after pair (the next experiment)
+
+One before/after comparison = **two experiment directories** on the same kind
+of real task (no synthetic tasks), one per condition:
+
+```bash
+python3 scripts/ascs.py init --name codex-handoff-002-baseline --runtime codex --target-repo /path/to/target
+python3 scripts/ascs.py init --name codex-handoff-002-treated  --runtime codex --target-repo /path/to/target
+```
+
+1. **Pre-register before working.** In each `report.md`, fill in Task Summary
+   *before the session starts*: the task, the done definition, the stack
+   condition (baseline = no ASCS `AGENTS.md` protocol / no ASCS
+   `.agent-session/`; treated = the documented protocol), and the judgment
+   rules for each metric (what counts as a repeated failure, a
+   rejected-option relapse, a human correction). `finish` warns if Task
+   Summary is still a placeholder.
+2. **Run the sessions.** Baseline first or treated first — record the order.
+   The session must include at least one real interruption boundary (session
+   end + resume, or model switch) so `resume_time_seconds` measures something.
+3. **Record events as they happen** (`record --event checkpoint|recovery-start|
+   state-check --note ...`), not retroactively at the end.
+4. **Finish each run** with the pre-registered judgment rules applied to the
+   session log, then compare the two directories side by side.
+5. **Interpretation limit.** n=1 pair is consistency evidence, not causality
+   ([docs/measurement-plan.md](../docs/measurement-plan.md) §2). Do not
+   aggregate a same-day in-progress session as a final value.
