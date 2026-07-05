@@ -12,6 +12,8 @@ launching Codex or Claude Code.
 - Manual event recording as JSON Lines.
 - Final metric capture.
 - PASS / PARTIAL / FAIL scoring for the narrow recovery-quality criteria.
+  `score` is read-only; `finish` is the command that writes final metrics and
+  updates `report.md`.
 
 ## What It Does Not Automate
 
@@ -66,7 +68,8 @@ python scripts/ascs.py score \
 - `record`, `finish`, and `score` exit `1` if the requested experiment files are
   missing or malformed.
 - `score` prints `PASS`, `PARTIAL`, or `FAIL`, but the command itself exits `0`
-  when scoring completes successfully.
+  when scoring completes successfully. It does not modify `experiment.json` or
+  `report.md`.
 
 ## Score Criteria
 

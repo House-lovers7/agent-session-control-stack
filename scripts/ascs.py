@@ -295,6 +295,13 @@ def status_for_metrics(metrics: dict[str, int]) -> dict[str, Any]:
     }
 
 
+def calculate_score(metrics: dict[str, int], scored_at: str | None = None) -> dict[str, Any]:
+    score = status_for_metrics(metrics)
+    if scored_at is not None:
+        score["scored_at"] = scored_at
+    return score
+
+
 def finish_experiment(args: argparse.Namespace) -> int:
     experiment_dir = Path(args.experiment)
     experiment_json = experiment_dir / "experiment.json"
@@ -312,7 +319,7 @@ def finish_experiment(args: argparse.Namespace) -> int:
     }
     data["metrics"] = metrics
     data["finished_at"] = now_iso()
-    data["score"] = status_for_metrics(metrics)
+    data["score"] = calculate_score(metrics)
     write_json(experiment_json, data)
     report_path = experiment_dir / "report.md"
     existing_report = report_path.read_text(encoding="utf-8") if report_path.exists() else None
@@ -336,12 +343,9 @@ def score_experiment(args: argparse.Namespace) -> int:
         return 1
 
     typed_metrics = {key: int(metrics[key]) for key in METRIC_KEYS}
-    score = status_for_metrics(typed_metrics)
-    data["score"] = score
-    write_json(experiment_json, data)
-    report_path = experiment_dir / "report.md"
-    existing_report = report_path.read_text(encoding="utf-8") if report_path.exists() else None
-    report_path.write_text(markdown_report(data, existing_report), encoding="utf-8")
+    existing_score = data.get("score", {})
+    existing_scored_at = existing_score.get("scored_at") if isinstance(existing_score, dict) else None
+    score = calculate_score(typed_metrics, existing_scored_at)
 
     print("| Metric | Value | Criterion |")
     print("|---|---:|---|")
