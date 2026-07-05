@@ -11,7 +11,7 @@ Credits:
 
 This project aims to document how these ideas can be composed safely across Claude Code and Codex.
 
-**Disclosure**: claude-code-session-health and this repository share the same author. The "single compact decider = session-health" recommendation is argued on technical grounds — the compact-plus reminder's warn-marker producer is external to its plugin by upstream design — not on authorship. See [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md) for the reasoning; challenges to it are welcome.
+**Disclosure**: claude-code-session-health and this repository share the same maintainer. The recommendation to use session-health as the single compact decider is based on technical separation of responsibilities, not authorship. In particular, compact-plus's reminder only fires if an external statusline writes a warn-marker file, so not installing that producer disables the reminder while preserving compact-plus's state capture and recovery behavior. See [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md) for the reasoning; challenges to it are welcome.
 
 ---
 
