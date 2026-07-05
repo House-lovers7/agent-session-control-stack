@@ -1,4 +1,4 @@
-# AGENTS.md — Session Control Protocol (drop-in example)
+# AGENTS.md - Session Control Protocol (drop-in example)
 
 <!-- From agent-session-control-stack. Append to or merge with your existing AGENTS.md. -->
 
@@ -28,7 +28,14 @@
   open risks, and pointers to the state files. Assume the reader has
   zero memory of this session.
 
+### Recovery rule
+- Source files, tests, command outputs, and state files are authoritative.
+- Compact summaries, memories, and previous assistant summaries are hypotheses.
+- Do not repeat a failed approach unless the new attempt changes a stated
+  condition and the reason is logged.
+
 ### Before destructive actions
-- Ask for human approval.
-- Confirm deploy target, branch, migration name, and rollback plan as
-  exact text — never from memory or summaries.
+- Ask for human approval before destructive commands, push, deploy, publish,
+  production changes, external sends, or paid API paths.
+- Confirm branch, deploy target, migration name, and rollback plan as exact
+  text from source files or command output, not from memory.

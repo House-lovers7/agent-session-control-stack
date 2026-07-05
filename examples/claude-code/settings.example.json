@@ -1,5 +1,5 @@
 {
-  "_comment": "agent-session-control-stack: example env for running session-health + compact-plus together. Merge the env block into your ~/.claude/settings.json. Values shown for SESSION_HEALTH_* are the upstream defaults for the main threshold knobs; omit them to track upstream. Two further knobs exist upstream (SESSION_HEALTH_CACHE_DELTA, SESSION_HEALTH_CUMULATIVE) - leave them unset unless you know why you need them.",
+  "_comment": "agent-session-control-stack Phase 1 example env for running session-health + compact-plus together. Merge the env block into your ~/.claude/settings.json after installing the upstream tools yourself. This file does not install hooks or start proxies. Values shown for SESSION_HEALTH_* are the upstream defaults for the main threshold knobs; omit them to track upstream. Two further knobs exist upstream (SESSION_HEALTH_CACHE_DELTA, SESSION_HEALTH_CUMULATIVE) - leave them unset unless you know why you need them.",
   "env": {
     "SESSION_HEALTH_HOT_REQS": "80",
     "SESSION_HEALTH_HOT_RATIO": "150",
