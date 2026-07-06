@@ -55,7 +55,7 @@ consistency evidence only, not causality (docs/measurement-plan.md §2).
 
 | Metric | Value |
 |---|---:|
-| resume_time_seconds | 143 |
+| resume_time_seconds | 42 (corrected 2026-07-06; originally published as 143) |
 | missed_state_files | 0 |
 | repeated_failures | 0 |
 | rejected_option_relapses | 0 |
@@ -65,6 +65,23 @@ Score: **PASS**
 
 Failed criteria: 0
 
+## Correction (2026-07-06)
+
+The originally published `resume_time_seconds = 143` started the clock at the
+`interruption_reached` event (2026-07-05T17:40:28Z) rather than at the first
+resume prompt, violating this arm's own pre-registered judgment rule. The
+Codex session log (`rollout-2026-07-06T02-42-01-*.jsonl`) shows the first
+resume prompt at 2026-07-05T17:42:08Z; with the recorded first
+forward-progress edit at 17:42:51Z this gives **~42 seconds**. The ~101-second
+gap in the original value was human/session-restart overhead between the two
+sessions, not resume behavior. See the `correction` event in `events.jsonl`.
+
+Timezone convention: event `timestamp` fields are UTC; clock times inside
+`note` strings are JST (UTC+9).
+
 ## Notes
 
-<!-- One to three lines of qualitative observations. -->
+The resumed session inspected this experiment's own `events.jsonl`, which
+contained a minimal interruption note — the baseline was not fully naive (see
+summary Limitations). The target repo is ASCS itself, so ASCS documentation
+was visible to the baseline session as well.

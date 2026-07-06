@@ -1,4 +1,10 @@
 {
+  "correction": {
+    "corrected_at": "2026-07-06T00:34:15+00:00",
+    "field": "resume_time_seconds",
+    "previous_value": 92,
+    "reason": "Clock started at the post-abort restart decision (18:09:20Z, before the resume session existed) instead of the first resume prompt required by the pre-registered rule. Recomputed from the Codex session log (first resume prompt 2026-07-05T18:10:19Z, first forward-progress edit 18:10:52Z)."
+  },
   "created_at": "2026-07-05T17:29:10+00:00",
   "events_file": "events.jsonl",
   "finished_at": "2026-07-05T18:13:45+00:00",
@@ -7,7 +13,7 @@
     "missed_state_files": 0,
     "rejected_option_relapses": 0,
     "repeated_failures": 0,
-    "resume_time_seconds": 92
+    "resume_time_seconds": 33
   },
   "name": "codex-handoff-002-treated",
   "report_file": "report.md",

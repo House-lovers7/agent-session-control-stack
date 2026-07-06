@@ -1,4 +1,10 @@
 {
+  "correction": {
+    "corrected_at": "2026-07-06T00:34:15+00:00",
+    "field": "resume_time_seconds",
+    "previous_value": 143,
+    "reason": "Clock started at the interruption_reached event instead of the first resume prompt required by the pre-registered rule. Recomputed from the Codex session log (first resume prompt 2026-07-05T17:42:08Z, first forward-progress edit 17:42:51Z)."
+  },
   "created_at": "2026-07-05T17:29:10+00:00",
   "events_file": "events.jsonl",
   "finished_at": "2026-07-05T17:45:12+00:00",
@@ -7,7 +13,7 @@
     "missed_state_files": 0,
     "rejected_option_relapses": 0,
     "repeated_failures": 0,
-    "resume_time_seconds": 143
+    "resume_time_seconds": 42
   },
   "name": "codex-handoff-002-baseline",
   "report_file": "report.md",

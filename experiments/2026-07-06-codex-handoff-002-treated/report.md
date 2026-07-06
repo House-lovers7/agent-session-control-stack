@@ -58,7 +58,7 @@ consistency evidence only, not causality (docs/measurement-plan.md §2).
 
 | Metric | Value |
 |---|---:|
-| resume_time_seconds | 92 |
+| resume_time_seconds | 33 (corrected 2026-07-06; originally published as 92) |
 | missed_state_files | 0 |
 | repeated_failures | 0 |
 | rejected_option_relapses | 0 |
@@ -68,6 +68,24 @@ Score: **PASS**
 
 Failed criteria: 0
 
+## Correction (2026-07-06)
+
+The originally published `resume_time_seconds = 92` started the clock at
+2026-07-05T18:09:20Z — the post-abort restart decision, 32 seconds *before*
+the resume session was created (18:09:52Z) — rather than at the first resume
+prompt, violating this arm's own pre-registered judgment rule. The Codex
+session log (`rollout-2026-07-06T03-09-52-*.jsonl`) shows the first resume
+prompt at 2026-07-05T18:10:19Z; with the recorded first forward-progress edit
+at 18:10:52Z this gives **~33 seconds**. See the `correction` event in
+`events.jsonl`.
+
+Timezone convention: event `timestamp` fields are UTC; clock times inside
+`note` strings are JST (UTC+9).
+
 ## Notes
 
-<!-- One to three lines of qualitative observations. -->
+A first resume attempt stalled and was aborted (`resume_attempt_aborted`,
+18:09:11Z) before the successful resume; the headline metric measures only
+the successful attempt. Total wall clock from interruption (17:53:46Z) to the
+successful first edit (18:10:52Z) was ~17 minutes, dominated by the aborted
+attempt and human overhead.
