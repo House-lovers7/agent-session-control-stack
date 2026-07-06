@@ -101,19 +101,139 @@ Prompts in both arms carry the same task statement and work-order
 instructions. No prompt in either arm may name, describe, or hint at any
 measured behavior (metric coaching prohibition, unchanged from 003).
 
+## Tasks and target repo — SETTLED (2026-07-06)
+
+Target repo: **supabase-rls-guard** again (open question 2). Operator
+familiarity keeps rising with each run and is recorded as a residual;
+worker familiarity was reset by the runtime change. Base commit candidate:
+`563ad47` (main after the T1' adoption; frozen per pair at
+pre-registration). Dynamic-SQL tasks were considered and rejected.
+
+Each task is two slices, sized so that Slice 1 is a completable,
+committable unit and Slice 2 supports a real "tests written,
+implementation not started" state.
+
+### T-A (Pair 1): rename tracking + `extension_in_public`
+
+**Slice 1 — model `ALTER POLICY … RENAME TO`.** Today the policy stays
+tracked under its old name and later patches addressed to the new name are
+lost (fails conservative; see the target repo's
+`docs/known-limitations.md`). Scope: the statement type
+(`src/core/types.ts`), extraction in both parser backends
+(`src/parser/libpg.ts` RenameStmt; `src/parser/regex.ts`, which currently
+detects and deliberately skips renames), the fold
+(`src/core/schema-state.ts`), and tests. Done = the worker's new tests
+pass + the full suite green + the acceptance assertions below + a Slice 1
+commit. Removing the known-limitations entry is **not** part of Slice 1 —
+it belongs to the resumed session's finishing steps.
+
+Acceptance assertion seeds (frozen verbatim at pre-registration):
+(a) after a rename, an `ALTER POLICY` clause patch addressed to the new
+name applies; (b) a patch addressed to the old name fails conservative,
+consistent with existing behavior; (c) findings report the current name;
+(d) the libpg and regex backends agree.
+
+**Slice 2 — new rule: extension installed in `public`** (candidate ID
+RLS019): flag `CREATE EXTENSION` statements that land the extension in the
+`public` schema. Design decisions that remain open at the checkpoint by
+construction: implementation location, severity, the semantics of an
+omitted `SCHEMA` clause (control-file default vs current schema — requires
+an official-docs preflight, deliberately left to the post-boundary work),
+regex-backend parity, `docs/rules.md`, and the 18→19 rule-count bump.
+
+### T-B (Pair 2): `CREATE TABLE AS` modeling + one Splinter rule
+
+**Slice 1 — model `CREATE TABLE AS`.** Today the resulting table is not
+modeled and column-level rules cannot inspect it (see the target repo's
+`docs/known-limitations.md`). Scope: fold the CTAS table into schema state
+so table-level rules (e.g. RLS enablement) apply to it, mark its column
+list unknown, and make column-level rules skip it without crashing and
+without false positives; both parser backends; tests. Acceptance assertion
+seeds: (a) a CTAS table without RLS enabled is flagged by the
+RLS-enablement rules; (b) column-level rules neither fire nor crash on it;
+(c) both backends agree. Done definition and commit discipline as in T-A.
+
+**Slice 2 — one new rule from the official Splinter catalog.** The rule ID
+is fixed at pre-registration, after an External Specification Preflight
+against the official catalog. Selection criteria (fixed now): (1) the lint
+exists in the official Splinter catalog; (2) it is statically detectable
+from migration SQL alone (no live catalog needed); (3) comparable in size
+to T-A's Slice 2 (new detection + registry + tests + docs; no parser
+overhaul); (4) independent of Slice 1's CTAS work, so the partial-start
+state stays clean. Unverified candidates (named from memory, pending the
+preflight): `no_primary_key`, `unindexed_foreign_keys`, `duplicate_index`.
+
 ## Fixed checkpoint — definition
 
 Each task is pre-registered as two named slices, **Slice 1** and **Slice 2**.
-The first-candidate checkpoint definition is **mid-slice**:
+The checkpoint position is **mid-slice**, and the stop trigger is
+**SETTLED (2026-07-06)** as a **test-first boundary**, identical in
+structure for both tasks:
 
-> **Slice 1 is complete (its new tests pass), Slice 2 is partially started,
-> and unfinished design decisions / open TODOs / an in-progress diff remain.
-> At that point the session is interrupted unconditionally.**
+> **Slice 1 is complete and committed (full suite green). Slice 2 exists
+> only as its new failing tests — uncommitted, with no implementation
+> edit. At the end of the first assistant turn in which that state holds,
+> the operator does not reply and ends the session.**
 
 No conditions, no operator discretion about *whether* — only a pre-registered
-definition of *where*. The worker's first-session prompt states the work
-order (Slice 1, then begin Slice 2) and contains no failure/rejection
-language and no mention of the interruption's purpose.
+definition of *where*.
+
+**"Slice 2 partially started" — definition.** All of P1–P4 hold:
+
+- **P1** — at least one new test case for the Slice 2 rule exists in the
+  test files and is **uncommitted** (visible in `git diff HEAD`).
+- **P2** — running the suite fails **only** the new Slice 2 tests; every
+  pre-existing and Slice 1 test is green (operator-run).
+- **P3** — zero Slice 2 implementation edits: `git diff HEAD --name-only`
+  is confined to test files (plus, in the treated arm, `.agent-session/`
+  and the `CLAUDE.md` marker block).
+- **P4** — at least one unfinished design decision / open TODO remains. At
+  this trigger P4 holds **by construction**: implementation location,
+  parser parity, docs, the rule-count bump, and the final green run are
+  all untouched. It does not depend on worker behavior — this is the
+  direct fix for what voided 003, where the checkpoint required naturally
+  occurring events.
+
+**Checkpoint reach conditions (operator-verified before interrupting).**
+
+- **C1** — a Slice 1 commit exists on the arm branch (directly on the
+  pair's base commit).
+- **C2** — the full suite is green at that commit (operator-run).
+- **C3** — P1 holds.
+- **C4** — P2 holds.
+- **C5** — P3 holds.
+- **C6** — the session was ended at the end of the first assistant turn in
+  which C1–C5 all held (auditable from the transcript's turn order; the
+  operator sends no reply after that turn).
+
+**Staging work order.** Both arms receive the same work-order instructions
+(frozen verbatim at pre-registration): complete Slice 1 and commit it when
+its tests pass; then write the new rule's tests first, run them, confirm
+they fail, and report and wait before implementing. The prompt contains no
+failure/rejection language and no mention of the interruption's purpose.
+This staging is a work-sequencing instruction, not metric coaching: every
+measured behavior belongs to the post-boundary session, and the
+instruction names none of them. It also makes the trigger land at a
+natural turn boundary, so no session is interrupted mid-edit.
+
+**No adherence prompting in the treated arm.** The operator never tells
+the pre-boundary treated session to update its state files before the
+interruption. The treatment is the protocol as written; prompting
+adherence would have the operator amplifying the treatment. If the treated
+arm's state files are stale at the checkpoint, that is a result, not a
+protocol violation. (Dogfood 0.1 observed that mid-work state-file updates
+needed a nudge — 004 measures the protocol without that nudge.)
+
+**No salvage.** If the session breaks the checkpoint definition — Slice 2
+implementation edits exist, or the Slice 2 failing tests were committed —
+the pair is void (void conditions 1a/1b). The operator does not repair the
+state with `git reset`, `commit --amend`, or `revert`: a repaired tree is
+no longer the state the session actually produced, and the uncommitted red
+tests are the core of what the resumed session must recover. Under-shoot
+is different: if the worker pauses before the trigger (a question, an
+early report), the operator may send a work-order-scoped continuation —
+pre-boundary operator messages are permitted as long as they coach no
+measured (post-boundary) behavior.
 
 **Why mid-slice, not the clean boundary.** "Slice 1 complete + Slice 2 not
 started" is easier to verify but leaves almost nothing to recover: the
@@ -123,13 +243,54 @@ protocol's value proposition is restoring **partial progress**: which
 approach was adopted, what is half-edited, what has not been touched, which
 tests already pass, what was decided but not yet implemented. Mid-slice
 interruption is where those signals exist. The cost is a harder
-"same position in both arms" claim — mitigated by pre-registering a concrete
-Slice 2 sub-step as the stop trigger (open question 7), and by the void
-condition on materially different checkpoint states.
+"same position in both arms" claim — mitigated by the concrete test-first
+stop trigger above (settled from open question 7), by the checkpoint audit
+items below, and by the void condition on materially different checkpoint
+states.
 
 The resumed session completes the remaining work: the rest of Slice 2 and
 the pre-registered finishing steps (parity/docs/final green run, per the
 task's done definition).
+
+## Checkpoint audit — same checkpoint across arms
+
+Recorded per arm at interruption and compared within the pair:
+
+- **A0 (prerequisite — arm isolation)** — each arm runs in its **own
+  checkout directory**. Running multiple arms by switching branches inside
+  one checkout is **prohibited**. Claude Code project/session context
+  (session history, auto-memory, project-scoped state) must not be shared
+  between the arms of a pair: both arms run the same task, so any shared
+  context is a direct contamination channel. The isolation setup is
+  verified and recorded **before** each arm starts; a violation voids the
+  pair (void condition 6).
+- **A1** — base commit identical across arms (frozen at pre-registration;
+  candidate: supabase-rls-guard `563ad47`).
+- **A2** — the task's pre-registered Slice 1 acceptance assertions all
+  hold in both arms.
+- **A3** — suite result at the checkpoint: the failing set is exactly the
+  new Slice 2 tests; the count is recorded.
+- **A4** — `git status --short -uall` and `git diff --stat`: the
+  uncommitted diff is confined to test files. The treated arm's
+  `.agent-session/` and `CLAUDE.md` marker block are excluded from the
+  between-arm comparison (they are the treatment).
+- **A5** — no Slice 2 implementation file touched (both arms).
+- **A6** — the number of new Slice 2 test cases is comparable across arms;
+  if one arm exceeds twice the other, the operator judges whether the
+  scope materially differs (void condition 3) and records the judgment and
+  both counts as an event. At n=2 this stays a recorded judgment, not a
+  mechanical threshold.
+- **A7** — turn-boundary evidence: no pre-boundary turn exists after the
+  turn in which the trigger first held.
+- **A8** — no auto-compaction before the checkpoint (both arms).
+
+**Derivation of the `missed_checkpoint_items` checklist.** The frozen
+per-task checklist maps onto this structure, one category per signal:
+Slice 1 already complete and committed (C1/C2); the uncommitted
+failing-test diff (C3/A4); the open-decisions list (P4); Slice 1's adopted
+design decisions (A2 — e.g. T-A's fail-conservative rename semantics); the
+test pass/fail map (A3). Freezing the checklist at pre-registration is
+therefore mostly mechanical once this section is fixed.
 
 ## Interruption method — FIXED: fresh-session restart
 
@@ -166,8 +327,8 @@ a compaction experiment can then be read against it.
 *before* the fixed checkpoint, that session has crossed an unregistered
 context boundary and the pre-registered boundary is no longer the only
 context break — this voids the pair (void condition 5). Sessions should be
-sized/monitored so the checkpoint is reached first; an auto-compaction event
-is recorded either way.
+sized/monitored so the checkpoint is reached first; any auto-compaction
+event is recorded regardless of when it occurs.
 
 **Fresh-session context isolation.** The fresh session receives **nothing**
 from the pre-boundary session: no conversation log, no summary of it, and no
@@ -184,17 +345,20 @@ two channels. An ad-hoc operator supplement — however small — contaminates
 the baseline/treated comparison (it is exactly the state transfer the
 protocol is being measured against) and voids the pair (void condition 4).
 
+**Arm isolation (audit prerequisite A0).** Isolation applies **between
+arms**, not only across the boundary within one arm. The two arms of a
+pair run the same task, so any shared Claude Code project or session
+context (session history, auto-memory, project-scoped state) is a direct
+contamination channel. Each arm therefore runs in its own checkout
+directory; running multiple arms by switching branches inside one checkout
+is prohibited. The isolation setup is verified and recorded before each
+arm starts. A violation voids the pair (void condition 6).
+
 Recording rules: `resume-start` at the moment the first prompt is sent to
 the fresh session, `first-progress-edit` at the first forward-progress edit,
 both recorded as events, `resume_time_seconds` harness-derived.
 Operator-driven throughout — 004 uses **no hooks** for checkpoint recording
 or health checks (see "Relation to the full stack").
-
-Either way, the recording rules are the same: `resume-start` at the moment
-the first post-boundary prompt is sent, `first-progress-edit` at the first
-forward-progress edit, both recorded as events, `resume_time_seconds`
-harness-derived. Operator-driven throughout — 004 uses **no hooks** for
-checkpoint recording or health checks (see "Relation to the full stack").
 
 ## Metrics
 
@@ -211,6 +375,9 @@ checkpoint recording or health checks (see "Relation to the full stack").
   - overlooking an open TODO / unfinished design decision
   - reversing an already-adopted design decision without new cause
   - misjudging which tests already pass
+
+  The per-task checklist derives mechanically from the checkpoint
+  definition — see "Checkpoint audit — same checkpoint across arms".
 - `recovery_quality` (0–4) — R1–R4 rubric unchanged from 003, one point
   each, judged against the session log
 - `human_corrections` — human messages needed to redirect the resumed
@@ -264,13 +431,24 @@ are.
 ## Void conditions (re-registered per pair)
 
 A pair is void if any of:
-1. a session **overshoots the checkpoint** (proceeds past the pre-registered
-   Slice 2 stop trigger before the boundary is applied),
+1. a session **breaks the checkpoint definition** before the boundary is
+   applied —
+   - **1a**: any Slice 2 implementation edit exists at session end,
+     committed or uncommitted, outside the test files; or
+   - **1b**: the Slice 2 failing tests were **committed** before the
+     boundary. The uncommitted red tests are the core of the checkpoint
+     state; committing them changes what the resumed session has to
+     recover.
+
+   Neither case is repaired with `git reset`, `commit --amend`, or
+   `revert` — a repaired tree is not the state the session actually
+   produced (see "No salvage"). Stopping *short* of the trigger is not
+   void; the session continues under the work order.
 2. `resume-start` or `first-progress-edit` was not recorded in an arm,
 3. the checkpoint states materially differ between arms (e.g., one arm's
    Slice 2 partial progress is substantially larger or touches different
-   areas — judged by the operator against the pre-registered slice and
-   stop-trigger definitions, decision recorded as an event),
+   areas — judged by the operator against the checkpoint audit items
+   A1–A8, decision recorded as an event),
 4. any prompt or operator message coached a measured behavior (including
    naming the `missed_checkpoint_items` categories to the worker), **or
    supplied the fresh session with any pre-boundary context beyond the
@@ -278,7 +456,10 @@ A pair is void if any of:
    (fresh-session context isolation — see "Interruption method"),
 5. Claude Code auto-compacts a session before the fixed checkpoint is
    reached (an unregistered context boundary preceded the registered one —
-   see "Interruption method").
+   see "Interruption method"),
+6. the **arm-isolation prerequisite (A0) is violated**: the pair's arms
+   shared a checkout directory (branch switching inside one checkout) or
+   shared Claude Code project/session context (see "Interruption method").
 
 Void pairs are recorded with a `void-pair` event, kept, and re-registered —
 same rule as 003.
@@ -295,15 +476,15 @@ experiment is follow-up work with its own design and number.
 
 ## Open questions to settle BEFORE pre-registration
 
-1. **Task selection.** Candidate: reuse the T2' gaps that 003 never consumed
-   (`ALTER POLICY … RENAME TO` identity tracking as Slice 1 +
-   `extension_in_public` as Slice 2) for one pair; a second matched
-   two-slice task is needed for the other pair. Alternative: pick both tasks
-   fresh from the target repo's remaining known-limitations. Slice 2 must be
-   substantial enough that "partially started" is a real state.
-2. **Target repo.** supabase-rls-guard again (operator familiarity is rising
-   with each run — a drift to record; worker familiarity resets with the
-   runtime change), or a different real repository.
+1. **Task selection — SETTLED (2026-07-06): T-A and T-B.** T1 = T-A
+   (rename tracking + `extension_in_public`), T2 = T-B (`CREATE TABLE AS`
+   modeling + one Splinter-catalog rule, ID fixed at pre-registration
+   after the official-catalog preflight). Dynamic-SQL tasks rejected. See
+   "Tasks and target repo". Numbering kept for traceability.
+2. **Target repo — SETTLED (2026-07-06): supabase-rls-guard.** Operator
+   familiarity is recorded as a residual; worker familiarity resets with
+   the runtime change. Base commit candidate `563ad47`. Numbering kept for
+   traceability.
 3. **Interruption method — SETTLED (2026-07-06): fresh-session restart.**
    `/compact` vs fresh-session restart was the highest-priority open
    question; it is now fixed to a fresh-session restart in both arms and
@@ -325,14 +506,15 @@ experiment is follow-up work with its own design and number.
    definitions, marker handling (`CLAUDE.md` instead of `AGENTS.md`), and
    tests follow the final task and method choices. `ascs.py init` runtime
    label becomes `claude-code`.
-7. **Stop-trigger precision for the mid-slice checkpoint.** The
-   first-candidate position is "Slice 1 complete + Slice 2 partially
-   started"; pre-registration must fix a concrete, auditable Slice 2
-   sub-step as the stop trigger (e.g., after the first Slice 2 file edit /
-   after Slice 2's failing test is written, before its implementation) so
-   the same-position-in-both-arms claim is checkable. If no auditable
-   trigger can be defined for the chosen task, fall back to
-   "Slice 2 not started" and record the trade-off.
+7. **Stop-trigger precision — SETTLED (2026-07-06): the test-first
+   boundary.** Slice 1 complete and committed; Slice 2 present only as
+   uncommitted failing tests; interruption at the end of the first
+   assistant turn in which that holds (see "Fixed checkpoint —
+   definition", conditions C1–C6). The fallback to "Slice 2 not started"
+   is no longer needed: the staging work order makes the trigger reachable
+   by construction. Committing the Slice 2 failing tests before the
+   boundary is a void condition (1b), with no `reset`/`amend`/`revert`
+   salvage. Numbering kept for traceability.
 8. **Number of pairs.** Two (ABBA, as drafted) vs more — cost/benefit of
    additional pairs given each pair consumes a real product task.
 
