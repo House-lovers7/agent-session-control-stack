@@ -69,24 +69,56 @@ With each `*_COMMAND` env var set to an `echo` stub, all three adapters
 exec'd the stub (arguments passed through where given) and exited 0. No
 upstream tool was started at any point.
 
-### S6 — First session: protocol adherence + handoff update — PENDING
+### S6 — First session: protocol adherence + handoff update — PASS (with notes)
 
-Operator-run interactive session; not yet executed. To observe (without
-coaching): does the session read `.agent-session/handoff.md` before its
-first edit; how does it treat the fictional demo content vs. the real
-sandbox state; does a requested protocol-conform stop update the state files.
+**Method (and its limits).** S6/S7 were run as fresh subagent sessions
+spawned from the maintainer's Claude Code session, with the sandbox
+`CLAUDE.md` content injected verbatim at the top of the prompt to
+approximate Claude Code's automatic project-instruction loading. This is
+not a full interactive session, and the prompt asked for a chronological
+file-access log at the end (a mild observation effect). Qualitative
+smoke-test evidence only.
 
-### S7 — Fresh-session restart from state files alone — PENDING
+Observed, first session (task: implement the stub function + a test; no
+mention of `.agent-session/` outside the injected CLAUDE.md):
 
-Operator-run; not yet executed. Minimal one-line resume prompt; no
-conversation log, summary, or verbal supplement. Qualitative notes only —
-no timing, no scoring (that is Experiment 004's territory, under its own
-pre-registered rules).
+- Read `.agent-session/handoff.md` **first**, then all five state files,
+  **before** opening any source file.
+- Detected the mismatch between the fictional demo content (a made-up
+  "Beacon Board" web app pointing at a nonexistent source file) and the
+  real sandbox state, and recorded it in `state/recovery-notes.md` instead
+  of acting on the fiction.
+- On its own initiative, updated `handoff.md` (accurate: what was done,
+  test result, uncommitted status) and `recovery-notes.md` before stopping.
+- **Partial adherence without a nudge**: `decision-log.md` and
+  `checkpoint.md` were only updated after an explicit "update
+  `.agent-session` per the protocol" follow-up (then correctly: the
+  adopted/rejected storage decision, a phase-boundary checkpoint).
+  `failed-attempts.md` was correctly left alone (no failures occurred).
 
-## Verdict (S1–S5 stage): usable so far
+### S7 — Fresh-session restart from state files alone — PASS
 
-Placement, doctor, and fail-safe behavior all match the documented contract.
-Final verdict waits on S6–S7.
+A brand-new session (zero shared memory) received only the injected
+CLAUDE.md and a one-line resume prompt ("continue the previous session's
+task"). No conversation log, summary, or verbal supplement. Observed:
+
+- Read `handoff.md` first, then every state file, before any source file.
+- Treated the handoff as a hypothesis and verified it against the source:
+  re-read the implementation and test, re-ran the test suite (passed),
+  cross-checked `git status` against the handoff's summary.
+- Concluded the task was genuinely complete, and **did not redo any
+  completed work and did not fabricate a new task** — it reported
+  completion, recorded one real discrepancy it found (a generated
+  bytecode directory missing from the handoff's git summary), and updated
+  `recovery-notes.md` and `handoff.md` per the protocol.
+
+## Verdict: usable
+
+S1–S5: placement, doctor, and fail-safe behavior all match the documented
+contract. S6–S7: under the subagent approximation above, the protocol was
+followed at resume time exactly where it matters most — handoff read
+first, summaries verified against source, no redone work. The one gap is
+mid-work adherence (S6 notes), which needed a nudge.
 
 ## Friction log
 
@@ -95,6 +127,16 @@ Final verdict waits on S6–S7.
    ASCS checkout. A user who copies `hooks/` into their own project gets a
    dangling reference. Fix candidate: name the repository (or use the full
    GitHub URL) instead of a relative path in the error text.
+2. `state/current-plan.md` is in the protocol's read list but no protocol
+   rule ever updates it — the fictional demo plan survived both S6 sessions
+   untouched and stale. Fix candidate: add current-plan to the
+   before-stopping update list (or state explicitly that the handoff
+   supersedes it).
+3. Session artifact, not a doc defect: after a later checkpoint refresh,
+   the handoff's pointer note ("checkpoint predates the notes task") went
+   stale until the S7 session rewrote it. The protocol's trust rule
+   ("everything here is a hypothesis") is what caught it — worth keeping
+   prominent.
 
 ## Safety observations
 
