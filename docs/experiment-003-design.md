@@ -136,3 +136,61 @@ python3 scripts/ascs.py finish --experiment <dir> --missed-state-files N --repea
   from the events — values are never hand-computed around the harness.
 - If either pair cannot be completed (e.g., no suitable T2), publish the
   single completed pair as a partial result with the ABBA limitation noted.
+
+## Re-registration (2026-07-06): Pairs 1r and 2r
+
+Everything above this section is the original pre-registration and is left
+unchanged. This section is an append-only amendment, written and committed
+**before** any re-registered session runs.
+
+**What happened.** Pair 1 ran and was **voided by the task-size rule**: the
+baseline session implemented T1 (`RLS012`, a single-rule addition) to its
+done definition with zero visible failures and zero explicitly rejected
+options — every command exited 0 (operator-verified from the Codex session
+log; `void-pair` events in both Pair 1 arms). Pair 2 (T2 = `RLS014`, a
+matched-size single-rule task) was never started and is marked
+`redesign-required`: it would likely void the same way. The `RLS012`
+deliverable was adopted into the target repo's main as product work
+(`502db3a`), separately from the experiment record.
+
+**Diagnosis.** A single-rule addition follows an established pattern
+(types → parser → fold → rule → tests) and is too smooth to exercise the
+recovery-quality metrics. Natural failures and design rejections live in
+changes to the *fold semantics* (schema-state), not in pattern-following
+rule additions. The original single interruption window (immediately before
+regex parity) also closed at exactly the moment it was first evaluated.
+
+**Re-registered task-size criteria** (supersede the original task-size rule
+for Pairs 1r/2r; the void-pair rule itself is unchanged):
+- the task bundles a **fold-semantics change** (Part A) with a **new rule**
+  (Part B), spanning parser(s) / schema-state / registry / docs / tests
+- the scale leaves clearly unfinished areas at any interruption point
+- failures and rejections must still occur **naturally** — they are never
+  instructed; if they do not occur, the pair voids (unchanged)
+
+**Re-registered pairs** (ABBA preserved; old directories kept append-only):
+
+| Pair | Task | First arm | Second arm |
+|---|---|---|---|
+| 1r | T1' = partial REVOKE subtraction semantics + `RLS014` `foreign_table_in_api` | baseline | treated |
+| 2r | T2' = `ALTER POLICY … RENAME TO` identity tracking + `extension_in_public` (`RLS019`) | **treated** | **baseline** |
+
+Both T1' parts and both T2' parts are real open gaps self-declared in the
+target repo's `docs/known-limitations.md` (REVOKE conservatism, policy
+renames) or statically-detectable Splinter items still missing
+(`RLS014`/0017, extension placement/0014). Pair 1r's base commit is the
+target repo's main including the adopted `RLS012` (`502db3a`), so no task
+overlaps work the operator's runtime has already performed.
+
+**Two-checkpoint interruption boundary** (replaces the single window for
+Pairs 1r/2r; full text in each arm's `report.md`):
+1. Checkpoint 1 — Part A passes its tests against the libpg backend, before
+   Part B starts.
+2. Checkpoint 2 — Part B's rule fires against the libpg backend, before
+   Part B's regex parity / docs rows / final all-green run.
+
+Interrupt at the first checkpoint where ≥1 visible failure and ≥1 explicitly
+rejected option have both already occurred; if still unmet at checkpoint 2,
+run to done and record the void. Metrics, judgment rules, the
+`recovery_quality` rubric, the UTC convention, and the interpretation limits
+above all carry over unchanged.

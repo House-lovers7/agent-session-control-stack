@@ -15,10 +15,14 @@ validate the full composition effect of pxpipe + session-health + compact-plus.
 | `2026-07-06-codex-handoff-002-summary.md` | Manual n=1 before/after pair for the Codex handoff protocol. **Resume times corrected on 2026-07-06** — the originally published values used asymmetric clock starts; see the summary's Correction notice. |
 | `2026-07-06-codex-handoff-002-baseline/` | Baseline arm of Experiment 002 (no ASCS protocol). |
 | `2026-07-06-codex-handoff-002-treated/` | Treated arm of Experiment 002 (root `AGENTS.md` + `.agent-session/`). |
-| `2026-07-06-codex-handoff-003-p1-baseline/` | Experiment 003, Pair 1 (T1 = `RLS012` in supabase-rls-guard), baseline arm — **pre-registered, sessions not yet run**. |
-| `2026-07-06-codex-handoff-003-p1-treated/` | Experiment 003, Pair 1, treated arm — pre-registered, sessions not yet run. |
-| `2026-07-06-codex-handoff-003-p2-treated/` | Experiment 003, Pair 2 (T2 = `RLS014`), treated arm, runs first in its pair (ABBA) — pre-registered, sessions not yet run. |
-| `2026-07-06-codex-handoff-003-p2-baseline/` | Experiment 003, Pair 2, baseline arm — pre-registered, sessions not yet run. |
+| `2026-07-06-codex-handoff-003-p1-baseline/` | Experiment 003, Pair 1 (T1 = `RLS012` in supabase-rls-guard), baseline arm — ran on 2026-07-06 and **voided by the task-size rule** (done definition reached with no visible failure and no rejected option; no resume measured). See its `void-pair` event. The deliverable was adopted as product work (supabase-rls-guard `502db3a`). |
+| `2026-07-06-codex-handoff-003-p1-treated/` | Experiment 003, Pair 1, treated arm — never run; **pair-level void** (see `void-pair` event). |
+| `2026-07-06-codex-handoff-003-p2-treated/` | Experiment 003, Pair 2 (T2 = `RLS014`), treated arm — never run; **redesign-required** (a matched-size single-rule task would likely void the same way). |
+| `2026-07-06-codex-handoff-003-p2-baseline/` | Experiment 003, Pair 2, baseline arm — never run; redesign-required. |
+| `2026-07-06-codex-handoff-003-p1r-baseline/` | Experiment 003, **re-registered Pair 1r** (T1' = partial REVOKE semantics + `RLS014`), baseline arm — **pre-registered, sessions not yet run**. Two-checkpoint interruption boundary (design doc, Re-registration section). |
+| `2026-07-06-codex-handoff-003-p1r-treated/` | Experiment 003, Pair 1r, treated arm — pre-registered, sessions not yet run. |
+| `2026-07-06-codex-handoff-003-p2r-treated/` | Experiment 003, **re-registered Pair 2r** (T2' = `ALTER POLICY RENAME` identity tracking + `extension_in_public`), treated arm, runs first in its pair (ABBA) — pre-registered, sessions not yet run. |
+| `2026-07-06-codex-handoff-003-p2r-baseline/` | Experiment 003, Pair 2r, baseline arm — pre-registered, sessions not yet run. |
 
 Timezone convention for all `events.jsonl` files: event `timestamp` fields
 are UTC; clock times inside `note` strings are JST (UTC+9).
