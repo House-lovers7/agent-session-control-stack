@@ -24,6 +24,11 @@ validate the full composition effect of pxpipe + session-health + compact-plus.
 | `2026-07-06-codex-handoff-003-p1r-treated/` | Experiment 003, Pair 1r, treated arm — never run; **pair-level void**. |
 | `2026-07-06-codex-handoff-003-p2r-treated/` | Experiment 003, **re-registered Pair 2r** (T2' = `ALTER POLICY RENAME` identity tracking + `extension_in_public`), treated arm — never run; **closed by the Experiment 003 closeout** (see `experiment-closed` event and the summary). |
 | `2026-07-06-codex-handoff-003-p2r-baseline/` | Experiment 003, Pair 2r, baseline arm — never run; closed by the Experiment 003 closeout. |
+| `2026-07-06-claude-code-restart-004-closeout.md` | **Experiment 004 closeout** — stopped with no recovery comparison: Pair 1 was voided by `scope_differs=True` / void condition 3 after both arms reached checkpoint shape; Pair 2 was not run because continued Fable 5 resource use was not operationally sustainable. No treated-vs-baseline, productivity, speed, model, or counterbalanced-result claim is allowed. |
+| `2026-07-06-claude-code-restart-004-p1-baseline/` | Experiment 004, Pair 1 baseline arm — started and reached checkpoint shape; Pair 1 later voided condition 3. |
+| `2026-07-06-claude-code-restart-004-p1-treated/` | Experiment 004, Pair 1 treated arm — started with the frozen `.agent-session` scaffold and reached checkpoint shape; Pair 1 later voided condition 3. |
+| `2026-07-06-claude-code-restart-004-p2-treated/` | Experiment 004, Pair 2 treated arm — preregistered only; not run before closeout. |
+| `2026-07-06-claude-code-restart-004-p2-baseline/` | Experiment 004, Pair 2 baseline arm — preregistered only; not run before closeout. |
 
 Timezone convention for all `events.jsonl` files: event `timestamp` fields
 are UTC; clock times inside `note` strings are JST (UTC+9).
