@@ -44,6 +44,7 @@ The one rule that keeps the composition from conflicting: both session-health an
 
 - Setup, hook ownership, env conventions: [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md)
 - Config snippet: [examples/claude-code/settings.example.json](examples/claude-code/settings.example.json)
+- End-to-end integration walkthrough and a worked demo: [docs/claude-code-reference-integration.md](docs/claude-code-reference-integration.md) · [examples/claude-code/stack-demo/](examples/claude-code/stack-demo/)
 
 ## Codex reference stack
 

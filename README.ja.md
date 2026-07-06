@@ -44,6 +44,7 @@ English: [README.md](README.md)
 
 - セットアップ・hook 責務・env 規約: [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md)
 - 設定スニペット: [examples/claude-code/settings.example.json](examples/claude-code/settings.example.json)
+- エンドツーエンド統合ウォークスルーとデモ例: [docs/claude-code-reference-integration.md](docs/claude-code-reference-integration.md) · [examples/claude-code/stack-demo/](examples/claude-code/stack-demo/)
 
 ## Codex reference stack
 

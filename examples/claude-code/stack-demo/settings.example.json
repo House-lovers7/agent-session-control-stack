@@ -1,0 +1,11 @@
+{
+  "_comment": "Shared env conventions live in ../settings.example.json: single decider, empty COMPACT_PLUS_* backends, and the PXPIPE_MODELS default. This demo adds only manual adapter command wiring.",
+  "_comment_SESSION_HEALTH_CHECK_COMMAND": "Empty = adapter disabled. After installing the upstream health detection tool yourself, set this to the command of your choice for manual adapter invocation.",
+  "_comment_COMPACT_PLUS_CHECKPOINT_COMMAND": "Empty = adapter disabled. After installing the upstream checkpoint/recovery tool yourself, set this to the command of your choice for manual adapter invocation.",
+  "_comment_PXPIPE_COMPRESS_COMMAND": "Empty = adapter disabled. After installing the upstream compression proxy yourself, set this to the command of your choice for starting or wrapping that proxy.",
+  "env": {
+    "SESSION_HEALTH_CHECK_COMMAND": "",
+    "COMPACT_PLUS_CHECKPOINT_COMMAND": "",
+    "PXPIPE_COMPRESS_COMMAND": ""
+  }
+}
