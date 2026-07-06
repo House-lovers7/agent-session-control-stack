@@ -58,6 +58,18 @@ OPTIONAL_METRIC_KEYS = [
 RESUME_START_EVENT = "resume-start"
 FIRST_PROGRESS_EVENT = "first-progress-edit"
 
+EXPERIMENT_004_PAIRS = {
+    "1": (
+        "2026-07-06-claude-code-restart-004-p1-baseline",
+        "2026-07-06-claude-code-restart-004-p1-treated",
+    ),
+    "2": (
+        "2026-07-06-claude-code-restart-004-p2-treated",
+        "2026-07-06-claude-code-restart-004-p2-baseline",
+    ),
+}
+EXPERIMENT_004_CLOSEOUT = "2026-07-06-claude-code-restart-004-closeout.md"
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -434,6 +446,176 @@ def derive_resume_time(events_path: Path) -> tuple[int | None, str]:
     return seconds, f"{resume_start} -> {first_progress}"
 
 
+def read_events(events_path: Path) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    if not events_path.exists():
+        return events
+    for line_number, line in enumerate(events_path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        if not isinstance(event, dict):
+            raise ValueError(f"{events_path}:{line_number}: event must be a JSON object")
+        events.append(event)
+    return events
+
+
+def has_event(events: list[dict[str, Any]], event_name: str) -> bool:
+    return any(event.get("event") == event_name for event in events)
+
+
+def event_notes(events: list[dict[str, Any]], event_name: str) -> list[str]:
+    return [str(event.get("note", "")) for event in events if event.get("event") == event_name]
+
+
+def void_condition(events: list[dict[str, Any]]) -> str | None:
+    import re
+
+    for note in event_notes(events, "void-pair"):
+        match = re.search(r"\bcondition=([^;\s]+)", note)
+        if match:
+            return match.group(1)
+    return None
+
+
+def has_scope_differs_event(events: list[dict[str, Any]]) -> bool:
+    return any("scope_differs=True" in note for note in event_notes(events, "pair-checkpoint-audit"))
+
+
+def experiment_004_pair_status(experiments_dir: Path, pair: str, arm_dirs: tuple[str, str]) -> dict[str, Any]:
+    arm_events = {
+        arm_dir: read_events(experiments_dir / arm_dir / "events.jsonl")
+        for arm_dir in arm_dirs
+    }
+    all_events = [event for events in arm_events.values() for event in events]
+    condition = void_condition(all_events)
+    scope_differs = has_scope_differs_event(all_events)
+    started = {
+        arm_dir: has_event(events, "arm_start")
+        for arm_dir, events in arm_events.items()
+    }
+    checkpointed = {
+        arm_dir: has_event(events, "interruption_reached")
+        for arm_dir, events in arm_events.items()
+    }
+
+    if condition:
+        status = f"VOID condition {condition}"
+        claim_boundary = "void pair; no treated-vs-baseline claim"
+    elif not any(started.values()):
+        status = "NOT RUN"
+        claim_boundary = "incomplete pair; not a failure"
+    elif not all(started.values()) or not all(checkpointed.values()):
+        status = "INCOMPLETE"
+        claim_boundary = "incomplete pair; no comparison"
+    elif all(has_event(events, "pair-verdict") for events in arm_events.values()):
+        status = "VALID COMPARISON"
+        claim_boundary = "pair verdict exists"
+    else:
+        status = "INCOMPLETE"
+        claim_boundary = "checkpointed but no valid verdict"
+
+    return {
+        "pair": pair,
+        "status": status,
+        "claim_boundary": claim_boundary,
+        "scope_differs_event": scope_differs,
+        "arms": arm_dirs,
+        "started": started,
+        "checkpointed": checkpointed,
+    }
+
+
+def experiment_004_measurement(experiments_dir: Path) -> dict[str, Any]:
+    pair_statuses = [
+        experiment_004_pair_status(experiments_dir, pair, arm_dirs)
+        for pair, arm_dirs in EXPERIMENT_004_PAIRS.items()
+    ]
+    valid_pairs = [pair for pair in pair_statuses if pair["status"] == "VALID COMPARISON"]
+    void_pairs = [pair for pair in pair_statuses if str(pair["status"]).startswith("VOID")]
+    closeout_exists = (experiments_dir / EXPERIMENT_004_CLOSEOUT).exists()
+
+    if closeout_exists and not valid_pairs:
+        experiment_status = "STOPPED / no valid comparison"
+    elif len(valid_pairs) == len(EXPERIMENT_004_PAIRS):
+        experiment_status = "COMPLETE / valid comparisons available"
+    elif void_pairs:
+        experiment_status = "STOPPED / no valid comparison"
+    else:
+        experiment_status = "INCOMPLETE / no valid comparison yet"
+
+    evidence_level = (
+        "evidence-loop validation only"
+        if not valid_pairs
+        else "valid comparison evidence"
+    )
+
+    return {
+        "experiment_status": experiment_status,
+        "pair_statuses": pair_statuses,
+        "evidence_level": evidence_level,
+        "observed_facts": [
+            "Experiment 004 closeout is present" if closeout_exists else "Experiment 004 closeout is not present",
+            "Pair 1 contains void-pair evidence for condition 3"
+            if any(pair["pair"] == "1" and pair["status"] == "VOID condition 3" for pair in pair_statuses)
+            else "Pair 1 has no condition 3 void evidence",
+            "Pair 2 is not run"
+            if any(pair["pair"] == "2" and pair["status"] == "NOT RUN" for pair in pair_statuses)
+            else "Pair 2 is not complete",
+        ],
+        "allowed_claims": [
+            "Experiment 004 validated parts of the ASCS evidence loop.",
+            "ASCS can restrict claims when a pair becomes invalid.",
+            "Experiment 004 produced operational lessons for future experiment design.",
+        ],
+        "disallowed_claims": [
+            "ASCS improved productivity.",
+            "Treated outperformed baseline.",
+            "Baseline outperformed treated.",
+            "Fable 5 is better or worse for this workflow.",
+            "Auto mode speed differences prove anything about ASCS.",
+            "Experiment 004 provides a valid counterbalanced result.",
+            "Any speed, model superiority, or production-readiness claim.",
+        ],
+        "next_required_evidence": [
+            "Run a new pre-registered experiment with standardized model, effort, approval mode, and runtime conditions.",
+            "Use valid, non-void baseline and treated arms before making treated-vs-baseline claims.",
+            "Cut the next attempt as Experiment 005 using Opus as the standard runtime.",
+        ],
+    }
+
+
+def print_measurement(result: dict[str, Any]) -> None:
+    print("ASCS MEASURE RESULT")
+    print(f"- Experiment status: {result['experiment_status']}")
+    print("- Pair statuses:")
+    for pair in result["pair_statuses"]:
+        print(f"  - Pair {pair['pair']}: {pair['status']} ({pair['claim_boundary']})")
+    print(f"- Evidence level: {result['evidence_level']}")
+    print("- Observed facts:")
+    for fact in result["observed_facts"]:
+        print(f"  - {fact}")
+    print("- Allowed claims:")
+    for claim in result["allowed_claims"]:
+        print(f"  - {claim}")
+    print("- Disallowed claims:")
+    for claim in result["disallowed_claims"]:
+        print(f"  - {claim}")
+    print("- Next required evidence:")
+    for item in result["next_required_evidence"]:
+        print(f"  - {item}")
+
+
+def measure_experiment(args: argparse.Namespace) -> int:
+    experiments_dir = Path(args.experiments_dir)
+    if args.experiment != "004":
+        print("FAIL only Experiment 004 measurement is supported", file=sys.stderr)
+        return 1
+    result = experiment_004_measurement(experiments_dir)
+    print_measurement(result)
+    return 0
+
+
 def finish_experiment(args: argparse.Namespace) -> int:
     experiment_dir = Path(args.experiment)
     experiment_json = experiment_dir / "experiment.json"
@@ -638,6 +820,15 @@ def build_parser() -> argparse.ArgumentParser:
     score_parser = subparsers.add_parser("score", help="score an experiment")
     score_parser.add_argument("--experiment", required=True)
     score_parser.set_defaults(func=score_experiment)
+
+    measure_parser = subparsers.add_parser("measure", help="read-only claim-boundary measurement")
+    measure_parser.add_argument("--experiment", required=True, choices=("004",))
+    measure_parser.add_argument(
+        "--experiments-dir",
+        default=str(repo_root() / "experiments"),
+        help="directory containing experiment evidence; defaults to this repo's experiments/",
+    )
+    measure_parser.set_defaults(func=measure_experiment)
 
     return parser
 
