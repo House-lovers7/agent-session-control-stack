@@ -63,6 +63,7 @@ survival is deferred to follow-up work (see "Interruption method").
 | No metric for checkpoint-state loss | New primary metric **`missed_checkpoint_items`**, defined against the pre-registered checkpoint state and countable in **both** arms |
 | `repeated_failures` / `rejected_option_relapses` were headline recovery metrics | Secondary: recorded only when failures/rejections occurred naturally before the checkpoint; absence is reported, never counted as evidence |
 | Task-size rule: task must be big enough for failures to occur | **Interruption-state rule**: the checkpoint must leave rich resumable state — in-progress diff, unfinished design decisions, open TODOs |
+| Void pairs were re-registered within the same experiment (pairs 1r/2r) | **Pair count fixed in advance at exactly 2**; void pairs are never replaced within 004 — a retry is a separate pre-registered follow-up experiment |
 
 Carried over unchanged: event-derived `resume_time_seconds`
 (`resume-start` → `first-progress-edit`; hand-computed values rejected), UTC
@@ -431,8 +432,8 @@ Void (a tightening of void condition 2):
   — reading a time out of the transcript — is **prohibited absolutely**.
   The transcript is used to audit event *ordering* (that the recording
   fell between the first and second edit), never as a source of the
-  value. A mis-recorded arm is not repaired; the pair is void and
-  re-registered.
+  value. A mis-recorded arm is not repaired; the pair is void and is not
+  replaced within Experiment 004 (see "Pair count").
 
 The strictness is deliberate: `resume_time_seconds` never feeds a
 headline (see "Gate design"), but the Experiment 002 correction showed
@@ -551,13 +552,16 @@ evidence at all; Layer 2 decides, within each valid pair, which arm
 recovered better; Layer 3 decides what may be claimed publicly. A Layer 2
 verdict is recorded per valid pair as soon as that pair completes; the
 Layer 3 public claim gate is **not applied until two valid pairs exist**.
-Void pairs never reach Layer 2 — they are recorded and re-registered.
+Void pairs never reach Layer 2 — they are recorded and kept, and are
+never replaced within Experiment 004 (see "Pair count").
 
 ### Layer 1 — validity gate
 
 An arm fails the validity gate if any item below fails; a pair with a
-failing arm is void (recorded with a `void-pair` event and re-registered,
-same rule as 003). The items restate the void conditions and the
+failing arm is void (recorded with a `void-pair` event and kept; never
+replaced within Experiment 004 — a deliberate change from 003's
+re-registration rule, see "Pair count"). The items restate the void
+conditions and the
 checkpoint audit as an operational checklist with check timing, so
 validity is established **before** outcomes are known.
 
@@ -678,7 +682,49 @@ pre-registration). The complete mapping:
   minimal continuation instruction; treated starts from the protocol's state
   files.
 
-## Void conditions (re-registered per pair)
+### Pair count — SETTLED (2026-07-06): exactly two pairs, fixed in advance
+
+Experiment 004 runs **exactly 2 pairs / 4 arms**: Pair 1 = T-A
+(baseline → treated), Pair 2 = T-B (treated → baseline), ABBA as above.
+**Adaptive expansion is prohibited**: no pair is added in response to
+results — favorable, unfavorable, or tied. n=2 is consistency evidence
+only, in every public statement.
+
+Why exactly two:
+
+1. **No optional stopping.** A variable pair count would allow adding or
+   re-rolling pairs until the results look right — invisible to a reader
+   at n=2. Fixing the count in advance and prohibiting replacement removes
+   that degree of freedom. The Layer 3 mapping is defined over exactly two
+   verdicts; a variable n would require re-deriving the mapping, which is
+   post-hoc discretion by construction.
+2. **Each pair consumes a real product task.** T-A and T-B are the entire
+   stock of matched two-slice tasks settled for 004; a third pair would
+   need a new task design, its own preflight, and a fresh checklist — with
+   a weaker comparability claim.
+3. **More pairs would not change the claim tier.** n=3–4 is still
+   consistency evidence, not statistics; the marginal persuasion does not
+   justify doubling the cost while the operator-familiarity residual grows
+   with every run.
+4. **ABBA completes at two.** The order-effect counterbalance is achieved
+   with two pairs; a third would unbalance it.
+
+**Void handling under a fixed count** — a deliberate change from 003,
+which re-registered void pairs within the same experiment (pairs 1r/2r):
+
+| Valid pairs | Outcome |
+|---|---|
+| 2 | Layer 3 applies; the public statement comes from the frozen mapping |
+| 1 | the valid pair's Layer 2 verdict is recorded; **Layer 3 is not applied** — the single verdict and its absolute values are reported descriptively with an explicit "no claim tier applies", and the void cause goes into the closeout |
+| 0 | closeout without a recovery comparison, stating that no comparison was obtained (the 003 closeout precedent) |
+
+Void pairs are recorded (`void-pair` event, mandatory condition number),
+kept, and **never replaced within Experiment 004**. If a retry is
+warranted, it is a separate follow-up experiment with its own number and
+its own pre-registration — it may inherit this design by reference, but
+its records never mix with 004's.
+
+## Void conditions (per pair)
 
 A pair is void if any of:
 1. a session **breaks the checkpoint definition** before the boundary is
@@ -714,8 +760,9 @@ A pair is void if any of:
    shared a checkout directory (branch switching inside one checkout) or
    shared Claude Code project/session context (see "Interruption method").
 
-Void pairs are recorded with a `void-pair` event, kept, and re-registered —
-same rule as 003.
+Void pairs are recorded with a `void-pair` event and kept — but, unlike
+003, **never replaced within Experiment 004**; a retry is a separate
+pre-registered follow-up experiment (see "Pair count").
 
 Operationally, these conditions are checked as the validity-gate items
 V1–V10 in "Gate design", which adds check timing and evidence but defines
@@ -772,7 +819,7 @@ that burden).
 | `record-first-progress-edit <arm>` | requires a prior `resume-start`; rejects duplicates; argument-free so a pre-typed invocation records in one keystroke; prints the timeliness rule as a reminder (the part no command can verify) |
 | `finish-arm <arm> --missed-checkpoint-items N --human-corrections N --recovery-quality 0..4 [--missed-state-files N\|na] [...]` | calls `ascs.py finish`; `resume_time_seconds` is event-derived only (hand-supplied values rejected — existing `ascs.py` behavior); never calls `ascs.py score` |
 | `pair-verdict <pair>` | machine-computes the Layer 2 lexicographic verdict and records it as an append-only `pair-verdict` event, with absolute values printed alongside and `resume_time_seconds` labeled "reported only"; refuses pairs with a void event — no verdict arithmetic is ever done by hand |
-| `claim-check` | refuses until **two valid pairs** exist; then prints only the permitted public statement from the frozen Layer 3 mapping plus the full forbidden-claims list; read-only |
+| `claim-check` | refuses until **two valid pairs** exist; then prints only the permitted public statement from the frozen Layer 3 mapping plus the full forbidden-claims list; read-only. If a void makes two valid pairs impossible, it refuses permanently and 004 closes out without a Layer 3 statement (see "Pair count") |
 | `record-void-pair <pair> --condition 1a\|1b\|2\|3\|4\|5\|6 --note <text>` | the condition number is a mandatory argument — an unspecified void cannot be recorded |
 | `status <arm>` | event listing, unchanged from 003 |
 
@@ -870,8 +917,14 @@ experiment is follow-up work with its own design and number.
    by construction. Committing the Slice 2 failing tests before the
    boundary is a void condition (1b), with no `reset`/`amend`/`revert`
    salvage. Numbering kept for traceability.
-8. **Number of pairs.** Two (ABBA, as drafted) vs more — cost/benefit of
-   additional pairs given each pair consumes a real product task.
+8. **Number of pairs — SETTLED (2026-07-06): exactly 2 pairs / 4 arms,
+   fixed in advance.** ABBA as drafted; adaptive expansion prohibited;
+   void pairs are never replaced within 004 (a deliberate change from
+   003's re-registration rule); with one valid pair, the Layer 2 verdict
+   is recorded but Layer 3 is not applied; with zero, 004 closes out
+   without a recovery comparison. A retry is a separate follow-up
+   experiment with its own number and pre-registration. See "Pair count".
+   Numbering kept for traceability.
 
 ## Version note
 
