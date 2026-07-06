@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Session Control Stack Architecture</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --ink: #1f2933;
+      --muted: #667085;
+      --line: #d0d5dd;
+      --accent: #2563eb;
+      --warn-bg: #fff7ed;
+      --warn-line: #fed7aa;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0 56px;
+    }
+
+    header {
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(2rem, 4vw, 3.1rem);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.35rem;
+      letter-spacing: 0;
+    }
+
+    p {
+      max-width: 780px;
+      margin: 0 0 14px;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .lede {
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    .notice {
+      border: 1px solid var(--warn-line);
+      background: var(--warn-bg);
+      padding: 14px 16px;
+      margin: 20px 0 28px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 24px 0 30px;
+    }
+
+    .layer {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 14px;
+      min-height: 128px;
+    }
+
+    .layer strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .layer span {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      margin-top: 18px;
+      padding: 22px;
+    }
+
+    .diagram {
+      overflow-x: auto;
+      padding-top: 6px;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+      color: var(--muted);
+    }
+
+    @media (max-width: 840px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      main {
+        width: min(100% - 20px, 1120px);
+        padding-top: 24px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Agent Session Control Stack Architecture</h1>
+      <p class="lede">
+        ASCS separates long-running AI coding agent stability into four layer
+        contracts, runtime bindings, and a conservative evidence measurement path.
+      </p>
+      <div class="links">
+        <a href="../README.md">README</a>
+        <a href="architecture.md">Markdown architecture</a>
+        <a href="claim-boundary-model.md">Claim-boundary model</a>
+      </div>
+    </header>
+
+    <div class="notice">
+      This HTML view is explanatory. It does not claim that ASCS improves
+      productivity, validates model quality, or proves the full-stack composition
+      effect. Experiment 004 currently demonstrates read-only claim-boundary
+      classification for recorded evidence.
+    </div>
+
+    <div class="grid" aria-label="Four ASCS layers">
+      <div class="layer">
+        <strong>1. Compression</strong>
+        <span>Reduce bulky context. Keep byte-exact values as text.</span>
+      </div>
+      <div class="layer">
+        <strong>2. Health Detection</strong>
+        <span>Detect hot sessions and keep compact decisions single-owner.</span>
+      </div>
+      <div class="layer">
+        <strong>3. Checkpointing</strong>
+        <span>Preserve plan, decisions, failed attempts, and topology.</span>
+      </div>
+      <div class="layer">
+        <strong>4. Recovery</strong>
+        <span>Resume from state. Treat summaries as hypotheses.</span>
+      </div>
+    </div>
+
+    <section>
+      <h2>Architecture At A Glance</h2>
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  Task["User task"] --> Agent["AI coding agent session"]
+
+  Px["Compression\npxpipe\nbulky context only"] -. "request path" .-> Agent
+  Health["Health Detection\nsession-health\nsingle compact decider"] -. "observe + advise" .-> Agent
+
+  Agent --> Boundary{"Compact / restart /\ninterruption boundary"}
+  Checkpoint["Checkpointing\ncompact-plus or\nAGENTS protocol"] -. "preserve plan,\ndecisions, failures" .-> Boundary
+  Boundary --> Recovery["Recovery\nstate first,\nsummary is hypothesis"]
+  Recovery --> Agent
+
+  Evidence["Experiment evidence\n(events + closeout)"] --> Measure["ascs.py measure\nread-only claim boundary"]
+  Measure --> Report["Conservative report\nallowed / disallowed claims"]
+        </pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>Layer Contract Map</h2>
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TB
+  subgraph ASCS["Agent Session Control Stack"]
+    C["1. Compression\nbulky context compression\nbyte-exact values stay text"]
+    H["2. Health Detection\nhot session detection\ncompact / new-session advice"]
+    P["3. Checkpointing\nplan / decisions / failed attempts /\nworker topology"]
+    R["4. Recovery\nstate-first resume\nsummary is hypothesis"]
+  end
+
+  C -. "upstream contract" .-> Px["pxpipe\n(teamchong)"]
+  H -. "upstream contract" .-> SH["claude-code-session-health\n(House-lovers7)"]
+  P -. "Claude Code binding" .-> CP["compact-plus\n(u-ichi)"]
+  R -. "Claude Code binding" .-> CP
+
+  P -. "Codex binding" .-> Codex["AGENTS.md + .agent-session/\nhandoff protocol"]
+  R -. "Codex binding" .-> Codex
+        </pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>Runtime Processing Flow</h2>
+      <div class="diagram">
+        <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant User
+  participant Agent as AI coding agent
+  participant Px as Compression / pxpipe
+  participant SH as Health Detection / session-health
+  participant CP as Checkpoint + Recovery
+  participant State as State files
+
+  User->>Agent: task / prompt
+  Agent->>Px: request path may compress bulky context
+  Px-->>Agent: compressed or pass-through context
+  SH-->>Agent: hot-session advice when thresholds are met
+  Agent->>CP: compact / restart / interruption boundary
+  CP->>State: preserve plan, decisions, failures, topology
+  CP-->>Agent: recovery guidance on next turn
+  Agent->>State: verify state and source files before trusting summaries
+        </pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>Evidence And Claim-Boundary Flow</h2>
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  Events["events.jsonl\nappend-only experiment events"] --> Evidence["Parsed experiment evidence"]
+  Closeout["closeout notes"] --> Evidence
+  Evidence --> Measure["scripts/ascs.py measure\nread-only verdict"]
+  Measure --> Claims["Claim-boundary report\nobserved facts\nallowed claims\ndisallowed claims"]
+
+  Measure -. "rejects --output" .-> Protected["protected evidence paths\nevents.jsonl / report.md /\nexperiment.json / experiments/"]
+  Measure --> SafeOut["explicit safe --output\nfor example /tmp/*.md"]
+        </pre>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: "strict",
+      theme: "default"
+    });
+  </script>
+</body>
+</html>

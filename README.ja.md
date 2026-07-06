@@ -26,6 +26,27 @@ English: [README.md](README.md)
 
 層の契約は独立しており、単体で導入・撤去できます（binding 上の注意が 1 点: Claude Code では Checkpoint と Recovery は同一 plugin（compact-plus）で提供されるため、対で導入・撤去されます）。
 
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+  Task["User task"] --> Agent["AI coding agent session"]
+
+  Px["Compression\npxpipe\nbulky context only"] -. "request path" .-> Agent
+  Health["Health Detection\nsession-health\nsingle compact decider"] -. "observe + advise" .-> Agent
+
+  Agent --> Boundary{"Compact / restart /\ninterruption boundary"}
+  Checkpoint["Checkpointing\ncompact-plus or\nAGENTS protocol"] -. "preserve plan,\ndecisions, failures" .-> Boundary
+  Boundary --> Recovery["Recovery\nstate first,\nsummary is hypothesis"]
+  Recovery --> Agent
+
+  Evidence["Experiment evidence\n(events + closeout)"] --> Measure["ascs.py measure\nread-only claim boundary"]
+  Measure --> Report["Conservative report\nallowed / disallowed claims"]
+```
+
+詳細なレイヤー図と処理フロー: [docs/architecture.md](docs/architecture.md)
+または [HTML view](docs/architecture.html)
+
 ## Existing projects
 
 - [pxpipe](https://github.com/teamchong/pxpipe)（teamchong）: 圧縮層

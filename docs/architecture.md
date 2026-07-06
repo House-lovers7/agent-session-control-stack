@@ -20,6 +20,68 @@ Agent Session Control Stack は、長時間動作する AI コーディングエ
 
 ## 2. 4 層モデル
 
+### 2.1 Layer contract map
+
+```mermaid
+flowchart TB
+  subgraph ASCS["Agent Session Control Stack"]
+    C["1. Compression\nbulky context を圧縮\nbyte-exact values は text のまま"]
+    H["2. Health Detection\nhot session を検知\ncompact / new session を提案"]
+    P["3. Checkpointing\nplan / decisions / failed attempts /\nworker topology を保存"]
+    R["4. Recovery\nstate を読んで再開\nsummary is hypothesis"]
+  end
+
+  C -. "upstream contract" .-> Px["pxpipe\n(teamchong)"]
+  H -. "upstream contract" .-> SH["claude-code-session-health\n(House-lovers7)"]
+  P -. "Claude Code binding" .-> CP["compact-plus\n(u-ichi)"]
+  R -. "Claude Code binding" .-> CP
+
+  P -. "Codex binding" .-> Codex["AGENTS.md + .agent-session/\nhandoff protocol"]
+  R -. "Codex binding" .-> Codex
+```
+
+### 2.2 Processing flow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant User
+  participant Agent as AI coding agent
+  participant Px as Compression / pxpipe
+  participant SH as Health Detection / session-health
+  participant CP as Checkpoint + Recovery
+  participant State as State files
+
+  User->>Agent: task / prompt
+  Agent->>Px: request path may compress bulky context
+  Px-->>Agent: compressed or pass-through context
+  SH-->>Agent: hot-session advice when thresholds are met
+  Agent->>CP: compact / restart / interruption boundary
+  CP->>State: preserve plan, decisions, failures, topology
+  CP-->>Agent: recovery guidance on next turn
+  Agent->>State: verify state and source files before trusting summaries
+```
+
+### 2.3 Evidence and claim-boundary flow
+
+```mermaid
+flowchart LR
+  Events["events.jsonl\nappend-only experiment events"] --> Evidence["Parsed experiment evidence"]
+  Closeout["closeout notes"] --> Evidence
+  Evidence --> Measure["scripts/ascs.py measure\nread-only verdict"]
+  Measure --> Claims["Claim-boundary report\nobserved facts\nallowed claims\ndisallowed claims"]
+
+  Measure -. "rejects --output" .-> Protected["protected evidence paths\nevents.jsonl / report.md /\nexperiment.json / experiments/"]
+  Measure --> SafeOut["explicit safe --output\nfor example /tmp/*.md"]
+```
+
+The measure path is intentionally narrower than the architecture: Experiment
+004 currently demonstrates read-only claim-boundary classification for recorded
+evidence. It does not validate productivity, model quality, or the full-stack
+composition effect.
+
+### 2.4 Original compact view
+
 ```
 ┌────────────────────────────────────────────┐
 │ Agent Session Control Stack                │

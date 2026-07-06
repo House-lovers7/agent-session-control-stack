@@ -26,6 +26,27 @@ Do not treat this as one problem. Separate it into four layers:
 
 The layer contracts are independent — each can be adopted or removed on its own. (One binding-level caveat: on Claude Code, Checkpoint and Recovery both ship in compact-plus, so they are adopted and removed as a pair.)
 
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+  Task["User task"] --> Agent["AI coding agent session"]
+
+  Px["Compression\npxpipe\nbulky context only"] -. "request path" .-> Agent
+  Health["Health Detection\nsession-health\nsingle compact decider"] -. "observe + advise" .-> Agent
+
+  Agent --> Boundary{"Compact / restart /\ninterruption boundary"}
+  Checkpoint["Checkpointing\ncompact-plus or\nAGENTS protocol"] -. "preserve plan,\ndecisions, failures" .-> Boundary
+  Boundary --> Recovery["Recovery\nstate first,\nsummary is hypothesis"]
+  Recovery --> Agent
+
+  Evidence["Experiment evidence\n(events + closeout)"] --> Measure["ascs.py measure\nread-only claim boundary"]
+  Measure --> Report["Conservative report\nallowed / disallowed claims"]
+```
+
+Detailed layer and flow diagrams: [docs/architecture.md](docs/architecture.md)
+or [HTML view](docs/architecture.html).
+
 ## Existing projects
 
 - [pxpipe](https://github.com/teamchong/pxpipe) (teamchong): compression layer
