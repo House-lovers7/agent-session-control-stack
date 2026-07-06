@@ -64,7 +64,8 @@ def write_events(path: Path, events):
 
 
 def make_exp004_fixture(tmp: str, *, void_pair=True, scope_differs=True, pair2_started=False) -> Path:
-    root = Path(tmp)
+    root = Path(tmp) / "experiments"
+    root.mkdir()
     (root / ascs.EXPERIMENT_004_CLOSEOUT).write_text("closeout\n", encoding="utf-8")
     p1_baseline, p1_treated = ascs.EXPERIMENT_004_PAIRS["1"]
     p2_treated, p2_baseline = ascs.EXPERIMENT_004_PAIRS["2"]
@@ -118,6 +119,30 @@ def make_exp004_fixture(tmp: str, *, void_pair=True, scope_differs=True, pair2_s
     for arm_dir in (p1_baseline, p1_treated, p2_treated, p2_baseline):
         (root / arm_dir / "report.md").write_text(f"# {arm_dir}\n", encoding="utf-8")
     return root
+
+
+def ev(name, note="", timestamp="2026-07-06T00:00:00+00:00"):
+    return {"timestamp": timestamp, "event": name, "note": note}
+
+
+def checkpointed_arm(failing=2):
+    return [
+        ev("preregistration", "pre"),
+        ev("arm_start", "started"),
+        ev("interruption_reached", f"interruption boundary reached; failing_count={failing}"),
+    ]
+
+
+def valid_arm(failing=2, with_resume=False):
+    events = checkpointed_arm(failing) + [ev("pair-verdict", "verdict recorded")]
+    if with_resume:
+        events.append(ev("resume-start", "resume", "2026-07-06T01:00:00+00:00"))
+        events.append(ev("first-progress-edit", "edit", "2026-07-06T01:00:42+00:00"))
+    return events
+
+
+def pure_evidence(pairs, closeout=True):
+    return {"experiment": "004", "closeout_exists": closeout, "pairs": pairs}
 
 
 class TestExperiment004Profile(unittest.TestCase):
@@ -295,6 +320,211 @@ class TestMeasureExperiment004(unittest.TestCase):
             }
         self.assertEqual(status, 0)
         self.assertEqual(after, before)
+
+
+class TestComputeClaimVerdict(unittest.TestCase):
+    def test_void_pair_blocks_treated_vs_baseline_claims(self):
+        void = ev("void-pair", "condition=3; note=scope audit")
+        evidence = pure_evidence([
+            {"pair": "1", "arm_events": {"a": checkpointed_arm(2) + [void], "b": checkpointed_arm(3) + [void]}},
+        ])
+        result = ascs.compute_claim_verdict(evidence)
+        pair = result["pair_statuses"][0]
+        self.assertEqual(pair["status"], "VOID condition 3")
+        self.assertIn("Treated outperformed baseline.", result["disallowed_claims"])
+        self.assertIn("Treated outperformed baseline.", result["unsupported_claims"])
+        overclaims = [c for c in result["allowed_claims"] if "outperform" in c or "productivity" in c]
+        self.assertEqual(overclaims, [])
+
+    def test_not_run_pair_is_not_a_failure(self):
+        evidence = pure_evidence([
+            {"pair": "2", "arm_events": {"a": [ev("preregistration")], "b": [ev("preregistration")]}},
+        ])
+        result = ascs.compute_claim_verdict(evidence)
+        pair = result["pair_statuses"][0]
+        self.assertEqual(pair["status"], "NOT RUN")
+        self.assertEqual(pair["claim_boundary"], "incomplete pair; not a failure")
+        self.assertNotIn("fail", pair["status"].lower())
+
+    def test_failing_count_difference_is_observed_fact_only(self):
+        evidence = pure_evidence(
+            [{"pair": "1", "arm_events": {"a": checkpointed_arm(2), "b": checkpointed_arm(3)}}],
+            closeout=False,
+        )
+        result = ascs.compute_claim_verdict(evidence)
+        pair = result["pair_statuses"][0]
+        self.assertEqual(pair["status"], "INCOMPLETE")
+        self.assertFalse(pair["scope_differs_event"])
+        fact = next(f for f in result["observed_facts"] if "failing_count observed" in f)
+        self.assertIn("observed fact only", fact)
+
+    def test_scope_differs_audit_alone_voids_pair(self):
+        audit = ev("pair-checkpoint-audit", "pair=1; scope_differs=True; operator judged scope materially different")
+        evidence = pure_evidence(
+            [{"pair": "1", "arm_events": {"a": checkpointed_arm(2) + [audit], "b": checkpointed_arm(3)}}],
+            closeout=False,
+        )
+        result = ascs.compute_claim_verdict(evidence)
+        pair = result["pair_statuses"][0]
+        self.assertEqual(pair["status"], "VOID (scope_differs audit)")
+        self.assertIn("no treated-vs-baseline claim", pair["claim_boundary"])
+
+    def test_stopped_experiment_disallows_productivity_speed_model_runtime_claims(self):
+        void = ev("void-pair", "condition=3; note=x")
+        evidence = pure_evidence([
+            {"pair": "1", "arm_events": {"a": checkpointed_arm(2) + [void], "b": checkpointed_arm(3) + [void]}},
+            {"pair": "2", "arm_events": {"a": [ev("preregistration")], "b": [ev("preregistration")]}},
+        ])
+        result = ascs.compute_claim_verdict(evidence)
+        self.assertEqual(result["experiment_status"], "STOPPED / no valid comparison")
+        self.assertEqual(result["evidence_level"], "evidence-loop validation only")
+        joined = " ".join(result["disallowed_claims"])
+        for keyword in ("productivity", "speed", "model superiority", "runtime superiority"):
+            self.assertIn(keyword, joined)
+        self.assertIn(
+            "No valid, non-void pair exists; treated-vs-baseline claims are blocked.",
+            result["blockers"],
+        )
+
+    def test_valid_pair_is_consistency_evidence_only(self):
+        evidence = pure_evidence(
+            [{"pair": "1", "arm_events": {"a": valid_arm(2), "b": valid_arm(2)}}],
+            closeout=False,
+        )
+        result = ascs.compute_claim_verdict(evidence)
+        self.assertEqual(result["experiment_status"], "COMPLETE / valid comparisons available")
+        self.assertIn("consistency evidence only", result["evidence_level"])
+        self.assertIn("not causality", result["evidence_level"])
+        self.assertIn("ASCS improved productivity.", result["disallowed_claims"])
+        self.assertIn(
+            "An internally consistent pair proves causality or productivity impact.",
+            result["disallowed_claims"],
+        )
+        self.assertEqual(result["composition_evidence"]["status"], "no composition evidence")
+
+    def test_resume_time_trusted_only_when_event_derived(self):
+        evidence = pure_evidence(
+            [{
+                "pair": "1",
+                "arm_events": {
+                    "with_resume": valid_arm(with_resume=True),
+                    "without_resume": valid_arm(),
+                },
+            }],
+            closeout=False,
+        )
+        result = ascs.compute_claim_verdict(evidence)
+        resume = result["pair_statuses"][0]["resume_time"]
+        self.assertTrue(resume["with_resume"]["trusted"])
+        self.assertEqual(resume["with_resume"]["seconds"], 42)
+        self.assertFalse(resume["without_resume"]["trusted"])
+        resume_claims = [c for c in result["allowed_claims"] if "resume_time_seconds" in c]
+        self.assertEqual(len(resume_claims), 1)
+        self.assertIn("with_resume", resume_claims[0])
+
+    def test_layer_evidence_separates_three_layers(self):
+        void = ev("void-pair", "condition=3; note=x")
+        evidence = pure_evidence([
+            {"pair": "1", "arm_events": {"a": checkpointed_arm(2) + [void], "b": checkpointed_arm(3) + [void]}},
+        ])
+        result = ascs.compute_claim_verdict(evidence)
+        layers = result["layer_evidence"]
+        self.assertEqual(set(layers), {"compression", "health_detection", "checkpoint_recovery"})
+        self.assertEqual(layers["compression"]["status"], "no evidence")
+        self.assertEqual(layers["compression"]["allowed_claims"], [])
+        self.assertEqual(layers["health_detection"]["status"], "no evidence")
+        self.assertEqual(layers["checkpoint_recovery"]["status"], "no evidence")
+        self.assertEqual(
+            result["ascs_evidence_loop"]["status"],
+            "checkpoint recording evidence; no recovery evidence",
+        )
+        self.assertEqual(result["composition_evidence"]["status"], "no composition evidence")
+        self.assertIn("The full-stack composition effect is validated.", result["unsupported_claims"])
+        self.assertIn("Token or bill reduction implies semantic correctness.", result["unsupported_claims"])
+        self.assertIn(
+            "ASCS evidence-loop events are compact-plus runtime evidence.",
+            result["unsupported_claims"],
+        )
+
+
+class TestMeasureOutputFormats(unittest.TestCase):
+    def test_measure_command_prints_layer_and_unsupported_sections(self):
+        with TemporaryDirectory() as tmp:
+            root = make_exp004_fixture(tmp)
+            with quiet() as (out, _err):
+                status = ascs.measure_experiment(
+                    argparse.Namespace(experiment="004", experiments_dir=str(root))
+                )
+        self.assertEqual(status, 0)
+        output = out.getvalue()
+        self.assertIn("- Reasons:", output)
+        self.assertIn("- Blockers:", output)
+        self.assertIn("- ASCS evidence-loop:", output)
+        self.assertIn("checkpoint recording evidence; no recovery evidence", output)
+        self.assertIn("- Layer evidence:", output)
+        self.assertIn("checkpoint_recovery (compact-plus (u-ichi)): no evidence", output)
+        self.assertIn("- Composition evidence: no composition evidence", output)
+        self.assertIn("- Unsupported claims:", output)
+
+    def test_measure_rejects_output_to_protected_evidence_filenames(self):
+        for filename in ("events.jsonl", "report.md", "experiment.json"):
+            with self.subTest(filename=filename):
+                with TemporaryDirectory() as tmp:
+                    root = make_exp004_fixture(tmp)
+                    protected = root / "some-arm" / filename
+                    protected.parent.mkdir(parents=True, exist_ok=True)
+                    protected.write_text("keep me\n", encoding="utf-8")
+                    with quiet() as (_out, err):
+                        status = ascs.measure_experiment(
+                            argparse.Namespace(
+                                experiment="004",
+                                experiments_dir=str(root),
+                                format="markdown",
+                                output=str(protected),
+                            )
+                        )
+                    self.assertEqual(status, 1)
+                    self.assertIn("protected evidence filename", err.getvalue())
+                    self.assertEqual(protected.read_text(encoding="utf-8"), "keep me\n")
+
+    def test_measure_rejects_output_under_experiments_directory(self):
+        with TemporaryDirectory() as tmp:
+            root = make_exp004_fixture(tmp)
+            protected = root / "claim-boundary.md"
+            with quiet() as (_out, err):
+                status = ascs.measure_experiment(
+                    argparse.Namespace(
+                        experiment="004",
+                        experiments_dir=str(root),
+                        format="markdown",
+                        output=str(protected),
+                    )
+                )
+        self.assertEqual(status, 1)
+        self.assertIn("protected experiments directory", err.getvalue())
+
+    def test_measure_command_markdown_output_to_file(self):
+        with TemporaryDirectory() as tmp:
+            root = make_exp004_fixture(tmp)
+            out_path = Path(tmp) / "reports" / "claim-boundary.md"
+            with quiet() as (out, _err):
+                status = ascs.measure_experiment(
+                    argparse.Namespace(
+                        experiment="004",
+                        experiments_dir=str(root),
+                        format="markdown",
+                        output=str(out_path),
+                    )
+                )
+            content = out_path.read_text(encoding="utf-8")
+        self.assertEqual(status, 0)
+        self.assertIn("OK wrote", out.getvalue())
+        self.assertIn("# ASCS Claim-Boundary Report — Experiment 004", content)
+        self.assertIn("| 1 | VOID condition 3 |", content)
+        self.assertIn("## ASCS evidence-loop", content)
+        self.assertIn("## Layer evidence", content)
+        self.assertIn("## Composition evidence", content)
+        self.assertIn("## Unsupported claims", content)
 
 
 if __name__ == "__main__":
