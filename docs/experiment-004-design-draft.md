@@ -382,7 +382,9 @@ or health checks (see "Relation to the full stack").
   each, judged against the session log
 - `human_corrections` — human messages needed to redirect the resumed
   session, excluding re-stating the task
-- `resume_time_seconds` — harness-derived, both arms, same clock rules
+- `resume_time_seconds` — harness-derived, both arms, same clock rules.
+  Recorded and reported only: excluded from the comparison tuple, from
+  tiebreaking, and from any headline claim (see "Gate design").
 
 ### Secondary (reported, never required)
 
@@ -401,14 +403,134 @@ or health checks (see "Relation to the full stack").
   earlier draft; renamed because the fixed boundary is a restart, not a
   compaction.)
 
-### PASS/FAIL gate
+### Gates — SETTLED (2026-07-06): three layers, no absolute PASS/FAIL
 
-Open question 4. The 002/003 gate cannot carry over as-is: it gated on
-`missed_state_files` = 0, which is now treated-only, and on two metrics that
-pass trivially when no natural failure occurred. Current candidate:
-`missed_checkpoint_items` = 0 and `human_corrections` ≤ 1, with everything
-else reported ungated. The gate is not the comparison; the primary metrics
-are.
+The 002/003-style absolute per-arm PASS/FAIL gate is **retired** for 004
+(the earlier candidate — `missed_checkpoint_items` = 0 +
+`human_corrections` ≤ 1 — is not adopted). At n=2, an absolute threshold
+makes "crossed / did not cross" dominate the reading and invites post-hoc
+argument about the threshold itself; 004's question is directional — does
+the treated arm recover better than baseline? — not a question about
+absolute levels. Gating is split into three layers, all frozen at
+pre-registration: a **validity gate** (is the arm/pair evidence at all), a
+**recovery comparison rule** (which arm recovered better, correctness
+first), and a **public claim gate** (what the two pair verdicts permit
+saying). See "Gate design". Absolute metric values are always reported;
+they are just not gates.
+
+## Gate design — SETTLED (2026-07-06)
+
+Three layers, applied in order. Layer 1 decides whether an arm/pair is
+evidence at all; Layer 2 decides, within each valid pair, which arm
+recovered better; Layer 3 decides what may be claimed publicly. A Layer 2
+verdict is recorded per valid pair as soon as that pair completes; the
+Layer 3 public claim gate is **not applied until two valid pairs exist**.
+Void pairs never reach Layer 2 — they are recorded and re-registered.
+
+### Layer 1 — validity gate
+
+An arm fails the validity gate if any item below fails; a pair with a
+failing arm is void (recorded with a `void-pair` event and re-registered,
+same rule as 003). The items restate the void conditions and the
+checkpoint audit as an operational checklist with check timing, so
+validity is established **before** outcomes are known.
+
+| # | Item | Checked | Evidence | On failure |
+|---|---|---|---|---|
+| V1 | A0 arm isolation: own checkout directory, no branch-switch reuse, no shared Claude Code project/session context | before the arm starts | isolation-setup event | pair void (cond. 6) |
+| V2 | base commit identical within the pair | before the arm starts | recorded `git rev-parse` | pair void (cond. 3) |
+| V3 | checkpoint reached per C1–C6 | at interruption | audit A1–A8 events | pair void |
+| V4 | Slice 2 failing tests **uncommitted** | at interruption | `git status` / `git log` | pair void (cond. 1b, no salvage) |
+| V5 | Slice 2 implementation untouched | at interruption | `git diff HEAD --name-only` | pair void (cond. 1a, no salvage) |
+| V6 | no auto-compaction before the checkpoint | at interruption | session observation record | pair void (cond. 5) |
+| V7 | fresh-session context isolation: verbatim-frozen resume prompt, repo artifacts only | at resume | prompt comparison + operator declaration event | pair void (cond. 4) |
+| V8 | `resume-start` and `first-progress-edit` recorded | at resume onward | events.jsonl | pair void (cond. 2) |
+| V9 | no coaching of measured behavior, on either side of the boundary | whole run | all prompts recorded and compared against pre-registered texts | pair void (cond. 4) |
+| V10 | checkpoint states materially equivalent across arms (audit A2–A8) | after interruption, **before resume** | audit events + operator judgment event | pair void (cond. 3) |
+
+V10 is judged before any resume so that no validity decision can be made
+with knowledge of an outcome. The timing column gives three stages —
+pre-arm (V1–V2), at interruption (V3–V6, V10), at resume (V7–V9) — so
+validity is fixed before results exist.
+
+### Layer 2 — recovery comparison rule (correctness first)
+
+Within a valid pair, arms are compared **lexicographically** on the
+primary comparison tuple:
+
+1. `missed_checkpoint_items` — lower is better (objective: counted against
+   the frozen checklist, both arms)
+2. `human_corrections` — lower is better (countable from the transcript)
+3. `recovery_quality` (R1–R4, 0–4) — higher is better (rubric-judged;
+   placed last because it carries operator judgment)
+
+`resume_time_seconds` is **not** in the tuple, is not a tiebreaker, and
+never feeds a headline claim — it is recorded and reported only. This is a
+standing consequence of the Experiment 002 correction: 004 measures
+whether recovery was *correct*, not whether it was fast.
+
+The first component with a strict difference decides the verdict. No
+margins: a one-item difference is an advantage — at one run per arm, a
+margin would be false precision; absolute values are published next to
+every verdict so readers can weigh them. The tuple's *order* is frozen at
+pre-registration precisely to remove post-hoc reordering discretion.
+
+Pair verdicts (recorded per valid pair, as each completes):
+
+| Verdict | Condition |
+|---|---|
+| treated advantage | treated strictly better at the first differing component |
+| tie | all three components equal (regardless of `resume_time_seconds`) |
+| baseline advantage | baseline strictly better at the first differing component |
+| void / invalid | Layer 1 failed — no comparison is performed |
+
+A tie does not distinguish "both perfect" from "both poor" — the published
+report must state the absolute values alongside every verdict. Comparisons
+are **within-pair only**: T-A and T-B have different checklist sizes, so
+checklist counts are never aggregated or compared across pairs.
+
+### Layer 3 — public claim gate
+
+Applied only when **two valid pairs** exist. Results are published
+whichever direction they point (the publication commitment is part of
+pre-registration). The complete mapping:
+
+| Pair verdicts (order-free) | Public statement |
+|---|---|
+| treated + treated | **limited positive signal** — treated advantage in 2/2 pre-registered pairs; n=2 consistency evidence, not proof of effect |
+| treated + tie | **below claim threshold** — direction reported descriptively; not called a positive signal |
+| tie + tie | **no observed advantage** for the protocol under this design |
+| treated + baseline | **inconclusive** — published as a null result |
+| baseline + tie | **no observed advantage**, with the baseline-favoring pair stated explicitly |
+| baseline + baseline | **negative signal for this protocol design** — published as such and fed back into protocol revision |
+
+**Forbidden claims, regardless of outcome:**
+
+- any full-stack / composition-effect claim (hooks, compact-plus,
+  session-health, pxpipe are not measured by 004)
+- /compact resilience (only the fresh-session restart boundary is measured)
+- production-ready, or any deployment recommendation
+- proof of a Claude Code defect (a baseline miss is an observation under
+  these conditions, not a runtime-defect finding)
+- percentage or speed headlines — anything derived from
+  `resume_time_seconds`
+- runtime or model comparisons (including Codex)
+- generalization beyond this repository, this task class, and this
+  protocol version
+
+### Known limits of this gate design
+
+- Ties may be common: Dogfood 0.1 saw near-perfect resume-time adherence,
+  and the checklists are small. If both arms hit 0–0–4, the honest verdict
+  is "no observed advantage" — accepting a null is a feature of the design
+  (the 003 lesson), not a defect.
+- `recovery_quality` is judged by an operator who is also the maintainer
+  and cannot be blinded; each R1–R4 point therefore requires a recorded
+  transcript-referenced rationale, and the metric sits last in the tuple.
+- The `human_corrections` boundary (redirect vs permitted work-order
+  continuation) must be frozen at pre-registration, and every post-resume
+  operator message recorded with a classification — an input to the 004
+  helper design (open question 6).
 
 ## Structure and comparison method
 
@@ -423,7 +545,9 @@ are.
 - Comparison: per-pair, per-metric, baseline vs treated at the same
   checkpoint; across pairs, directional agreement under reversed order is
   the strongest available claim. Disagreement is a null result and is
-  published as such.
+  published as such. Each pair's verdict (treated advantage / tie /
+  baseline advantage) is produced by the recovery comparison rule in
+  "Gate design"; per-metric absolute values are reported alongside.
 - Post-boundary session: baseline receives only the task statement plus a
   minimal continuation instruction; treated starts from the protocol's state
   files.
@@ -464,6 +588,10 @@ A pair is void if any of:
 Void pairs are recorded with a `void-pair` event, kept, and re-registered —
 same rule as 003.
 
+Operationally, these conditions are checked as the validity-gate items
+V1–V10 in "Gate design", which adds check timing and evidence but defines
+no new conditions.
+
 ## Relation to the full stack
 
 ASCS also ships hooks, compact-plus, session-health, and pxpipe. Claude Code
@@ -491,9 +619,17 @@ experiment is follow-up work with its own design and number.
    both pairs (rationale in "Interruption method"). Measuring `/compact`
    survival is follow-up work with its own experiment number, not
    additional 004 pairs. Numbering kept for traceability.
-4. **Gate composition.** Adopt the candidate gate
-   (`missed_checkpoint_items` = 0 + `human_corrections` ≤ 1) vs report all
-   metrics ungated for one experiment before gating a new metric.
+4. **Gate composition — SETTLED (2026-07-06): three layers, no absolute
+   PASS/FAIL.** The candidate absolute gate (`missed_checkpoint_items` = 0
+   + `human_corrections` ≤ 1) is not adopted. Validity gate (V1–V10) →
+   per-pair recovery comparison on the lexicographic tuple
+   (`missed_checkpoint_items`, `human_corrections`, `recovery_quality`;
+   `resume_time_seconds` excluded from the tuple, tiebreaks, and
+   headlines) → public claim gate applied only once two valid pairs exist,
+   with treated + tie below the claim threshold. Layer 2 verdicts are
+   recorded per valid pair as each completes. The tuple order and the
+   claim mapping are frozen verbatim at pre-registration. See "Gate
+   design". Numbering kept for traceability.
 5. **The first-progress-edit prompting amendment.** 003 had resume prompts
    instruct the worker to pause before the first durable edit so the
    operator records `first-progress-edit` (symmetric; adds operator response
