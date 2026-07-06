@@ -15,6 +15,10 @@ validate the full composition effect of pxpipe + session-health + compact-plus.
 | `2026-07-06-codex-handoff-002-summary.md` | Manual n=1 before/after pair for the Codex handoff protocol. **Resume times corrected on 2026-07-06** — the originally published values used asymmetric clock starts; see the summary's Correction notice. |
 | `2026-07-06-codex-handoff-002-baseline/` | Baseline arm of Experiment 002 (no ASCS protocol). |
 | `2026-07-06-codex-handoff-002-treated/` | Treated arm of Experiment 002 (root `AGENTS.md` + `.agent-session/`). |
+| `2026-07-06-codex-handoff-003-p1-baseline/` | Experiment 003, Pair 1 (T1 = `RLS012` in supabase-rls-guard), baseline arm — **pre-registered, sessions not yet run**. |
+| `2026-07-06-codex-handoff-003-p1-treated/` | Experiment 003, Pair 1, treated arm — pre-registered, sessions not yet run. |
+| `2026-07-06-codex-handoff-003-p2-treated/` | Experiment 003, Pair 2 (T2 = `RLS014`), treated arm, runs first in its pair (ABBA) — pre-registered, sessions not yet run. |
+| `2026-07-06-codex-handoff-003-p2-baseline/` | Experiment 003, Pair 2, baseline arm — pre-registered, sessions not yet run. |
 
 Timezone convention for all `events.jsonl` files: event `timestamp` fields
 are UTC; clock times inside `note` strings are JST (UTC+9).
