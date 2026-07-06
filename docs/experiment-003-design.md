@@ -194,3 +194,33 @@ rejected option have both already occurred; if still unmet at checkpoint 2,
 run to done and record the void. Metrics, judgment rules, the
 `recovery_quality` rubric, the UTC convention, and the interpretation limits
 above all carry over unchanged.
+
+## Closeout (2026-07-06)
+
+Everything above is left unchanged; this is an append-only closing note.
+
+**Experiment 003 is closed without a resume comparison.** Pair 1 (T1,
+single-rule task) voided: done reached with zero visible failures and zero
+explicitly rejected options. Pair 1r (T1', a fold-semantics + new-rule
+bundle under the two-checkpoint boundary above) voided the same way at both
+checkpoints. Pair 2 was marked redesign-required and Pair 2r was closed
+without running. Full account:
+`experiments/2026-07-06-codex-handoff-003-summary.md`.
+
+**What the two voids established.** The boundary's precondition — that a
+visible failure and a reasoned rejected option occur *naturally* before any
+interruption — is refuted for this worker on a well-structured target
+repository, independent of the tested task sizes: the worker probes the AST
+before implementing, follows in-repo patterns, and states design choices as
+declarations rather than deliberated rejections. Voiding twice was the
+correct behavior of the rule; re-registering a third, larger task would test
+the same refuted assumption again.
+
+**Superseded by.** The next experiment will use a new experiment number and
+**fixed-checkpoint interruption**: interrupt unconditionally at a
+pre-registered checkpoint identical in both arms; primary metrics
+`missed_state_files` / `recovery_quality` / `human_corrections` /
+`resume_time_seconds`; `repeated_failures` / `rejected_option_relapses`
+demoted to secondary, recorded only when failures/rejections occurred
+naturally before the checkpoint. Its design will be registered separately
+before any session runs. No version tag is cut from Experiment 003.

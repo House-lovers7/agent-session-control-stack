@@ -19,10 +19,11 @@ validate the full composition effect of pxpipe + session-health + compact-plus.
 | `2026-07-06-codex-handoff-003-p1-treated/` | Experiment 003, Pair 1, treated arm — never run; **pair-level void** (see `void-pair` event). |
 | `2026-07-06-codex-handoff-003-p2-treated/` | Experiment 003, Pair 2 (T2 = `RLS014`), treated arm — never run; **redesign-required** (a matched-size single-rule task would likely void the same way). |
 | `2026-07-06-codex-handoff-003-p2-baseline/` | Experiment 003, Pair 2, baseline arm — never run; redesign-required. |
-| `2026-07-06-codex-handoff-003-p1r-baseline/` | Experiment 003, **re-registered Pair 1r** (T1' = partial REVOKE semantics + `RLS014`), baseline arm — **pre-registered, sessions not yet run**. Two-checkpoint interruption boundary (design doc, Re-registration section). |
-| `2026-07-06-codex-handoff-003-p1r-treated/` | Experiment 003, Pair 1r, treated arm — pre-registered, sessions not yet run. |
-| `2026-07-06-codex-handoff-003-p2r-treated/` | Experiment 003, **re-registered Pair 2r** (T2' = `ALTER POLICY RENAME` identity tracking + `extension_in_public`), treated arm, runs first in its pair (ABBA) — pre-registered, sessions not yet run. |
-| `2026-07-06-codex-handoff-003-p2r-baseline/` | Experiment 003, Pair 2r, baseline arm — pre-registered, sessions not yet run. |
+| `2026-07-06-codex-handoff-003-summary.md` | **Experiment 003 closeout** — closed 2026-07-06 with **no resume comparison obtained**: two consecutive voids (Pair 1, Pair 1r) refuted the natural-failure interruption precondition; the next attempt is a new experiment number with fixed-checkpoint interruption. |
+| `2026-07-06-codex-handoff-003-p1r-baseline/` | Experiment 003, **re-registered Pair 1r** (T1' = partial REVOKE semantics + `RLS014`, two-checkpoint boundary), baseline arm — ran on 2026-07-06 and **voided**: boundary conditions unmet at both pre-registered checkpoints (see `checkpoint-observed` and `void-pair` events). Deliverable saved as product work on target branch `exp-003-p1r-baseline` (`cd8881e`). |
+| `2026-07-06-codex-handoff-003-p1r-treated/` | Experiment 003, Pair 1r, treated arm — never run; **pair-level void**. |
+| `2026-07-06-codex-handoff-003-p2r-treated/` | Experiment 003, **re-registered Pair 2r** (T2' = `ALTER POLICY RENAME` identity tracking + `extension_in_public`), treated arm — never run; **closed by the Experiment 003 closeout** (see `experiment-closed` event and the summary). |
+| `2026-07-06-codex-handoff-003-p2r-baseline/` | Experiment 003, Pair 2r, baseline arm — never run; closed by the Experiment 003 closeout. |
 
 Timezone convention for all `events.jsonl` files: event `timestamp` fields
 are UTC; clock times inside `note` strings are JST (UTC+9).
@@ -36,11 +37,15 @@ criteria", not "the stack works generally".
 
 ## Running a real before/after pair (the next experiment)
 
-The next experiment is pre-registered in
-[docs/experiment-003-design.md](../docs/experiment-003-design.md): two ABBA
-counterbalanced pairs, event-derived resume timing, a task-size rule so the
-recovery-quality metrics can bite, and `recovery_quality` (0–4) as a
-comparison metric outside the PASS/FAIL gate.
+Experiment 003 ([design](../docs/experiment-003-design.md)) was **closed on
+2026-07-06 without obtaining a resume comparison** — its
+naturally-occurring-failure interruption precondition never fired in two
+consecutive attempts (see the
+[closeout summary](2026-07-06-codex-handoff-003-summary.md)). The next
+experiment will use a **new experiment number** and interrupt
+unconditionally at a pre-registered checkpoint shared by both arms; its
+design is not yet registered. The recording rules below (event-derived
+timing, UTC, pre-registration before work) carry over unchanged.
 
 One before/after comparison = **two experiment directories** on the same kind
 of real task (no synthetic tasks), one per condition:
