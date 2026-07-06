@@ -14,7 +14,8 @@ drift into a runtime comparison.
 
 **In scope:**
 
-- Claude Code's compaction / long-session recovery behavior on a real task
+- Claude Code's long-session recovery behavior on a real task, across a
+  fresh-session restart boundary
 - fixed checkpoint interruption, identical in both arms
 - the effect of the ASCS state/handoff protocol on resume quality
 
@@ -46,9 +47,10 @@ surviving context compaction and session restarts without losing plan,
 decisions, and progress. Claude Code is where that claim actually bites: it
 compacts long sessions (`/compact`, auto-compaction) and is resumed across
 sessions in daily use. 004 therefore measures the protocol where the product
-problem lives: **what a Claude Code session loses across a
-compaction/restart boundary, and whether the ASCS protocol reduces that
-loss.**
+problem lives: **what a Claude Code session loses across a context
+boundary, and whether the ASCS protocol reduces that loss.** Of the two
+boundary kinds, 004 measures the **fresh-session restart**; compaction
+survival is deferred to follow-up work (see "Interruption method").
 
 ## Changes from Experiment 003
 
@@ -56,7 +58,7 @@ loss.**
 |---|---|
 | Runtime under test: Codex | **Claude Code** (Codex comparison out of scope) |
 | Interrupt only after ≥1 natural visible failure + ≥1 explicit rejected option | **Fixed checkpoint interruption**: interrupt unconditionally at a pre-registered work position, identical in both arms; no behavioral precondition |
-| Interruption = session end + fresh session | Interruption = **compaction or session restart** (which one is an open question; identical in both arms) |
+| Interruption = session end + fresh session | Interruption = **fresh-session restart** (fixed; `/compact` was considered and deferred to follow-up work — see "Interruption method") |
 | `missed_state_files` was a primary/gated metric | Moved to **treated-only protocol adherence** (secondary): baseline has no `.agent-session/`, so gating the comparison on it would be structurally unfair |
 | No metric for checkpoint-state loss | New primary metric **`missed_checkpoint_items`**, defined against the pre-registered checkpoint state and countable in **both** arms |
 | `repeated_failures` / `rejected_option_relapses` were headline recovery metrics | Secondary: recorded only when failures/rejections occurred naturally before the checkpoint; absence is reported, never counted as evidence |
@@ -77,8 +79,8 @@ deliverables by human review separate from the experiment record, n=2 pairs
   as-is — baseline is *standard* operation, not a stripped-down one
 - no `.agent-session/` directory
 - no ASCS handoff/checkpoint files or protocol text
-- at the fixed checkpoint: `/compact` or a fresh-session restart (per the
-  interruption method chosen at pre-registration; identical to treated)
+- at the fixed checkpoint: the session ends and a fresh session is started
+  (identical to treated)
 - resume prompt: the task statement plus a minimal continuation instruction,
   nothing else
 
@@ -92,7 +94,7 @@ deliverables by human review separate from the experiment record, n=2 pairs
   `failed-attempts.md`, `checkpoint.md`, `recovery-notes.md`
 - the session updates the state files **before** the fixed checkpoint is
   reached (protocol behavior, not operator coaching)
-- after `/compact` / restart: the session reads the state files and resumes
+- after the restart: the fresh session reads the state files and resumes
   from them
 
 Prompts in both arms carry the same task statement and work-order
@@ -129,20 +131,64 @@ The resumed session completes the remaining work: the rest of Slice 2 and
 the pre-registered finishing steps (parity/docs/final green run, per the
 task's done definition).
 
-## Interruption method
+## Interruption method — FIXED: fresh-session restart
 
-The boundary is **either** `/compact` **or** a fresh-session restart —
-chosen at pre-registration and **identical in both arms and both pairs**
-(open question 3). The two measure different things and are **not mixed
-within Experiment 004**:
+The boundary in Experiment 004 is a **fresh-session restart**, identical in
+both arms and both pairs. `/compact` is **not** used as the boundary. The
+two were candidates because they measure different things:
 
-- `/compact` — measures survival of Claude Code's own context compaction:
-  the same session continues with a compacted context
-- fresh session — measures cold-restart handoff/recovery: closest to
-  002/003's boundary and to the daily "continue tomorrow" case
+- `/compact` — survival of Claude Code's own context compaction: the same
+  session continues with a compacted context
+- fresh session — cold-restart handoff/recovery: closest to 002/003's
+  boundary and to the daily "continue tomorrow" case
 
-This choice **must be fixed before final pre-registration** — it changes
-what the experiment is about, so it cannot be left to per-pair discretion.
+**Why fresh session.** With `/compact` as the boundary, the post-boundary
+context is a compaction summary **generated by Claude Code itself** — an
+artifact that cannot be pre-registered, cannot be held identical between
+arms, and varies in quality run to run. The comparison would become
+"protocol + summary vs summary alone", with an uncontrolled third
+intervention sitting in both arms; at n=2 pairs, its variance can swallow
+the protocol effect, and the R1–R4 judgments would be contaminated by
+whatever the summary happened to preserve. A fresh-session restart makes the
+post-boundary context exactly what the operator provides — fully
+pre-registrable, symmetric between arms, and the maximal baseline/treated
+contrast (nothing vs protocol files). It also matches the handoff protocol's
+primary design case and reuses the 002/003 event machinery unchanged.
+
+**What this defers.** Compaction survival — the Claude Code-specific failure
+mode — is **not measured by 004**. It is follow-up work under its own
+experiment number, with a design that treats the compaction summary as a
+recorded artifact of the measured system rather than an uncontrolled
+confounder. 004 first establishes a clean estimate of the protocol effect;
+a compaction experiment can then be read against it.
+
+**Auto-compaction contamination.** If Claude Code auto-compacts a session
+*before* the fixed checkpoint, that session has crossed an unregistered
+context boundary and the pre-registered boundary is no longer the only
+context break — this voids the pair (void condition 5). Sessions should be
+sized/monitored so the checkpoint is reached first; an auto-compaction event
+is recorded either way.
+
+**Fresh-session context isolation.** The fresh session receives **nothing**
+from the pre-boundary session: no conversation log, no summary of it, and no
+operator supplement about prior progress ("last time we got this far",
+"the approach was X", etc. — all prohibited). The only permitted inputs are:
+
+1. the **pre-registered resume prompt** for that arm (frozen verbatim at
+   pre-registration), and
+2. the **artifacts inside the target repository working tree** at the
+   checkpoint — which, in the treated arm, include `.agent-session/`.
+
+Everything the resumed session knows about prior work must come from those
+two channels. An ad-hoc operator supplement — however small — contaminates
+the baseline/treated comparison (it is exactly the state transfer the
+protocol is being measured against) and voids the pair (void condition 4).
+
+Recording rules: `resume-start` at the moment the first prompt is sent to
+the fresh session, `first-progress-edit` at the first forward-progress edit,
+both recorded as events, `resume_time_seconds` harness-derived.
+Operator-driven throughout — 004 uses **no hooks** for checkpoint recording
+or health checks (see "Relation to the full stack").
 
 Either way, the recording rules are the same: `resume-start` at the moment
 the first post-boundary prompt is sent, `first-progress-edit` at the first
@@ -181,10 +227,12 @@ checkpoint recording or health checks (see "Relation to the full stack").
 - `repeated_failures`, `rejected_option_relapses` — judged with the 003
   rules, but only meaningful if a failure/rejection actually occurred before
   the checkpoint; their absence is stated in the report, not interpreted.
-- `compaction_state_loss_observations` — qualitative, append-only notes of
-  concrete state visibly lost across the boundary (e.g., a constraint stated
-  pre-boundary and contradicted post-boundary), recorded as events in both
-  arms.
+- `boundary_state_loss_observations` — qualitative, append-only notes of
+  concrete state visibly lost across the restart boundary (e.g., a
+  constraint stated pre-boundary and contradicted post-boundary), recorded
+  as events in both arms. (Named `compaction_state_loss_observations` in an
+  earlier draft; renamed because the fixed boundary is a restart, not a
+  compaction.)
 
 ### PASS/FAIL gate
 
@@ -224,7 +272,13 @@ A pair is void if any of:
    areas — judged by the operator against the pre-registered slice and
    stop-trigger definitions, decision recorded as an event),
 4. any prompt or operator message coached a measured behavior (including
-   naming the `missed_checkpoint_items` categories to the worker).
+   naming the `missed_checkpoint_items` categories to the worker), **or
+   supplied the fresh session with any pre-boundary context beyond the
+   pre-registered resume prompt and the repo-internal artifacts**
+   (fresh-session context isolation — see "Interruption method"),
+5. Claude Code auto-compacts a session before the fixed checkpoint is
+   reached (an unregistered context boundary preceded the registered one —
+   see "Interruption method").
 
 Void pairs are recorded with a `void-pair` event, kept, and re-registered —
 same rule as 003.
@@ -250,12 +304,12 @@ experiment is follow-up work with its own design and number.
 2. **Target repo.** supabase-rls-guard again (operator familiarity is rising
    with each run — a drift to record; worker familiarity resets with the
    runtime change), or a different real repository.
-3. **Interruption method — the highest-priority open question.**
-   `/compact` vs fresh-session restart (see "Interruption method").
-   Exactly one is chosen, fixed at pre-registration, and applied identically
-   in both arms and both pairs; the two are never mixed within 004.
-   Measuring the other method is follow-up work with its own experiment
-   number, not additional 004 pairs.
+3. **Interruption method — SETTLED (2026-07-06): fresh-session restart.**
+   `/compact` vs fresh-session restart was the highest-priority open
+   question; it is now fixed to a fresh-session restart in both arms and
+   both pairs (rationale in "Interruption method"). Measuring `/compact`
+   survival is follow-up work with its own experiment number, not
+   additional 004 pairs. Numbering kept for traceability.
 4. **Gate composition.** Adopt the candidate gate
    (`missed_checkpoint_items` = 0 + `human_corrections` ≤ 1) vs report all
    metrics ungated for one experiment before gating a new metric.
@@ -280,8 +334,7 @@ experiment is follow-up work with its own design and number.
    trigger can be defined for the chosen task, fall back to
    "Slice 2 not started" and record the trade-off.
 8. **Number of pairs.** Two (ABBA, as drafted) vs more — cost/benefit of
-   additional pairs given each pair consumes a real product task, plus one
-   more if both interruption methods are to be measured.
+   additional pairs given each pair consumes a real product task.
 
 ## Version note
 
