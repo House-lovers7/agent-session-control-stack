@@ -43,7 +43,18 @@ def commit_all(repo: Path, message: str) -> str:
 
 class TestPromptGeneration(unittest.TestCase):
     def test_prompts_generate_without_measurement_coaching(self):
-        forbidden = ["first-progress-edit", "missed_checkpoint_items", "測定手続き"]
+        forbidden = [
+            "baseline",
+            "treated",
+            ".agent-session",
+            "protocol",
+            "recovery_quality",
+            "missed_checkpoint_items",
+            "first-progress-edit",
+            "visible failure",
+            "rejected option",
+            "測定手続き",
+        ]
         for name in exp004.ARMS:
             arm = exp004.arm_from_name(name)
             for phase in ("first", "resume"):
@@ -52,10 +63,16 @@ class TestPromptGeneration(unittest.TestCase):
                 for token in forbidden:
                     self.assertNotIn(token, prompt, f"{name}/{phase} contains {token!r}")
 
-    def test_treated_resume_instructs_state_reads(self):
+    def test_condition_prompts_share_same_template(self):
+        left = exp004.build_prompt(exp004.arm_from_name("004-p1-baseline"), "first")
+        right = exp004.build_prompt(exp004.arm_from_name("004-p1-treated"), "first")
+        self.assertEqual(left, right)
+
+    def test_resume_prompt_is_minimal(self):
         prompt = exp004.build_prompt(exp004.arm_from_name("004-p2-treated"), "resume")
-        self.assertIn(".agent-session/handoff.md", prompt)
-        self.assertIn(".agent-session/state/", prompt)
+        self.assertIn("前回の fresh session は checkpoint で終了しました。同じタスクを完了してください。", prompt)
+        self.assertIn("Done definition:", prompt)
+        self.assertNotIn("Report and wait", prompt)
 
     def test_t_b_prompt_freezes_no_primary_key_checkpoint_constraint(self):
         prompt = exp004.build_prompt(exp004.arm_from_name("004-p2-baseline"), "first")

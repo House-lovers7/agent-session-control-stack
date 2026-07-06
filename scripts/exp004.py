@@ -49,7 +49,7 @@ class Arm:
 ARMS = {
     "004-p1-baseline": Arm(
         name="004-p1-baseline",
-        experiment_dir="experiments/2026-07-06-claude-code-handoff-004-p1-baseline",
+        experiment_dir="experiments/2026-07-06-claude-code-restart-004-p1-baseline",
         task="T-A rename tracking + extension_in_public",
         condition="baseline",
         order=1,
@@ -58,7 +58,7 @@ ARMS = {
     ),
     "004-p1-treated": Arm(
         name="004-p1-treated",
-        experiment_dir="experiments/2026-07-06-claude-code-handoff-004-p1-treated",
+        experiment_dir="experiments/2026-07-06-claude-code-restart-004-p1-treated",
         task="T-A rename tracking + extension_in_public",
         condition="treated",
         order=2,
@@ -67,7 +67,7 @@ ARMS = {
     ),
     "004-p2-treated": Arm(
         name="004-p2-treated",
-        experiment_dir="experiments/2026-07-06-claude-code-handoff-004-p2-treated",
+        experiment_dir="experiments/2026-07-06-claude-code-restart-004-p2-treated",
         task="T-B CTAS modeling + Splinter 0004 no_primary_key",
         condition="treated",
         order=3,
@@ -76,7 +76,7 @@ ARMS = {
     ),
     "004-p2-baseline": Arm(
         name="004-p2-baseline",
-        experiment_dir="experiments/2026-07-06-claude-code-handoff-004-p2-baseline",
+        experiment_dir="experiments/2026-07-06-claude-code-restart-004-p2-baseline",
         task="T-B CTAS modeling + Splinter 0004 no_primary_key",
         condition="baseline",
         order=4,
@@ -370,26 +370,16 @@ def verify_treated_setup(checkout: Path) -> int:
 def build_prompt(arm: Arm, phase: str) -> str:
     task_text = TASK_TEXT[arm.pair]
     if phase == "first":
-        if arm.condition == "baseline":
-            condition = """Condition:
-- Use standard Claude Code operation.
-- Do not create or use `.agent-session/`.
-- Use the target repo's normal instructions (`CLAUDE.md`, README) as usual.
-- Do not push, release, create issues, create PRs, or use other AI help."""
-        else:
-            condition = """Condition:
-- Read root `CLAUDE.md`, `.agent-session/handoff.md`, and `.agent-session/state/`
-  before making task edits.
-- Follow the ASCS handoff/state protocol in the marker block.
-- Do not push, release, create issues, create PRs, or use other AI help."""
         return f"""日本語で回答してください。
 コード、ファイル名、コマンド、識別子は英語のままにしてください。
 
-Experiment 004 {arm.condition} arm の first session です。
+Experiment 004 の作業セッションです。
 repo: supabase-rls-guard
-branch: {arm.branch}
 
-{condition}
+制約:
+- repo の通常の開発指示を読んで従ってください。
+- push / release / issue / PR は作成しないでください。
+- 他の AI のレビュー・支援は使わないでください。
 
 Task:
 {task_text}
@@ -402,19 +392,6 @@ Work order:
 - Report and wait before editing any Slice 2 implementation file.
 """
 
-    if arm.condition == "baseline":
-        constraint = """Constraints:
-- Continue with standard Claude Code operation.
-- Do not use `.agent-session/`.
-- Do not use any transcript, summary, or operator supplement from the prior session.
-- Do not push, release, create issues, create PRs, or use other AI help."""
-    else:
-        constraint = """Constraints:
-- First read root `CLAUDE.md`, `.agent-session/handoff.md`, and `.agent-session/state/`.
-- Summarize what you verified from those files before making task edits.
-- Follow the ASCS handoff/state protocol.
-- Do not use any transcript, summary, or operator supplement from the prior session.
-- Do not push, release, create issues, create PRs, or use other AI help."""
     return f"""日本語で回答してください。
 コード、ファイル名、コマンド、識別子は英語のままにしてください。
 
@@ -423,7 +400,12 @@ Work order:
 Task:
 {task_text}
 
-{constraint}
+Done definition:
+- Complete the remaining Slice 2 implementation.
+- Keep both parser backends consistent where the task requires parity.
+- Update the relevant docs and rule count when the task requires it.
+- Run the final relevant suite and report the result.
+- Do not push, release, create issues, create PRs, or use other AI help.
 """
 
 
