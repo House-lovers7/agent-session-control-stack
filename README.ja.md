@@ -44,8 +44,10 @@ flowchart LR
   Measure --> Report["Conservative report\nallowed / disallowed claims"]
 ```
 
-詳細なレイヤー図と処理フロー: [docs/architecture.md](docs/architecture.md)
-または [HTML view](docs/architecture.html)
+Architecture と claim-boundary の導線:
+- [docs/architecture.md](docs/architecture.md) — なぜ 4 層なのか、なぜ 3 upstream project を置き換えないのか、なぜ claim boundary が architecture の一部なのか
+- [docs/claim-boundary-model.md](docs/claim-boundary-model.md) — `measure` の判定ルール、allowed / disallowed claims、void / stopped / incomplete の分類
+- [HTML architecture view](docs/architecture.html)
 
 ## Existing projects
 
@@ -145,6 +147,7 @@ ASCS は full-stack の composition effect をまだ測定していません。
 
 ## More
 
-- 設計原本（Phase 0、日本語）: [architecture](docs/architecture.md) · [hook 責務分離](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md 案](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
+- Living architecture / claim-boundary architecture: [architecture](docs/architecture.md)
+- 設計原本（Phase 0、日本語）: [hook 責務分離](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md 案](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
 - Roadmap: Phase 0 設計 ✅ → Phase 1 docs-only 参照アーキテクチャ（本セット）→ Phase 2 実セッション before/after 測定（harness 準備済み — `scripts/ascs.py`。最初の n=1 before/after ペアを記録済み — [Experiment 002](experiments/2026-07-06-codex-handoff-002-summary.md)。合成効果は未測定）→ Phase 3 upstream 協調 → Phase 4+ ツール化（generator / 導入状態 doctor / 測定自動化、Phase 2 が撤退基準をクリアした場合のみ）
 - License: MIT — [LICENSE](LICENSE)

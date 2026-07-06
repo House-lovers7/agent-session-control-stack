@@ -1,6 +1,6 @@
 # Agent Session Control Stack — Architecture
 
-> Phase 0 設計原本（Fable執筆）。Phase 1 で英語公開版に整形する際も、本書の事実関係・責務境界を正とする。
+> Living architecture document. Phase 0 の設計原本を起点に、Phase 2 以降の evidence / claim-boundary 実装を反映する。事実関係・責務境界・claim boundary の基準文書として扱う。
 
 ## 1. 位置づけ
 

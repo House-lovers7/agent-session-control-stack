@@ -44,8 +44,10 @@ flowchart LR
   Measure --> Report["Conservative report\nallowed / disallowed claims"]
 ```
 
-Detailed layer and flow diagrams: [docs/architecture.md](docs/architecture.md)
-or [HTML view](docs/architecture.html).
+Architecture and claim-boundary map:
+- [docs/architecture.md](docs/architecture.md) explains why ASCS uses four layers, why it does not replace the three upstream projects, and why claim boundaries are part of the architecture.
+- [docs/claim-boundary-model.md](docs/claim-boundary-model.md) defines the `measure` verdict rules, allowed / disallowed claims, and void / stopped / incomplete classifications.
+- [HTML architecture view](docs/architecture.html)
 
 ## Existing projects
 
@@ -144,6 +146,7 @@ This repository is an integration/reference architecture. It does not claim owne
 
 ## More
 
-- Design originals (Phase 0, Japanese): [architecture](docs/architecture.md) · [hook responsibilities](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md draft](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
+- Living architecture / claim-boundary architecture: [architecture](docs/architecture.md)
+- Design originals (Phase 0, Japanese): [hook responsibilities](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md draft](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
 - Roadmap: Phase 0 design ✅ → Phase 1 docs-only reference architecture (this set) → Phase 2 before/after measurement (harness ready — `scripts/ascs.py`; first n=1 before/after pair recorded — [Experiment 002](experiments/2026-07-06-codex-handoff-002-summary.md); composition effect still unmeasured) → Phase 3 upstream collaboration → Phase 4+ tooling (generator / install-state doctor / automated measurement), only if Phase 2 clears the withdrawal criteria
 - License: MIT — [LICENSE](LICENSE)
