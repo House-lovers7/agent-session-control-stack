@@ -354,11 +354,134 @@ directory; running multiple arms by switching branches inside one checkout
 is prohibited. The isolation setup is verified and recorded before each
 arm starts. A violation voids the pair (void condition 6).
 
-Recording rules: `resume-start` at the moment the first prompt is sent to
-the fresh session, `first-progress-edit` at the first forward-progress edit,
-both recorded as events, `resume_time_seconds` harness-derived.
-Operator-driven throughout — 004 uses **no hooks** for checkpoint recording
-or health checks (see "Relation to the full stack").
+Recording rules — how `resume-start` and `first-progress-edit` are
+defined, recorded, and voided — are specified in "Resume timing".
+Operator-driven throughout — 004 uses **no hooks** for checkpoint
+recording or health checks (see "Relation to the full stack").
+
+## Resume timing — SETTLED (2026-07-06)
+
+How `resume-start` and `first-progress-edit` are recorded. 003's method —
+resume prompts instructing the worker to pause before its first durable
+edit so the operator could record the event — is **dropped**: it inserted
+an artificial stop into the natural recovery flow, mixed operator response
+latency into `resume_time_seconds`, and hinted to the worker that the
+first edit mattered. In 004 the worker is never told anything about
+measurement: the operator observes and records **on the ASCS side only**,
+and sends no additional message to Claude Code. Identical in both arms.
+
+### `resume-start`
+
+Recorded **immediately before sending** the pre-registered resume prompt
+(frozen verbatim) to the fresh session; the send follows the recording as
+one motion. Claude Code startup, checkout preparation, and operator
+prompt preparation are excluded — they complete before the recording.
+Everything after the send — the model's reading, state recovery,
+reasoning, planning — is included. That post-send time is the thing being
+measured.
+
+### `first-progress-edit`
+
+Recorded immediately after the operator observes the successful tool
+result of the fresh session's **first durable target edit**:
+
+- **durable** — an operation that actually changed the target repo's
+  working tree (Edit / Write / a file-writing command), with a successful
+  tool result;
+- **target** — a file related to the task deliverable. Operationally: any
+  file in the target repo working tree except a frozen exclusion list
+  (below).
+
+Counted (examples): the first edit to `src/` implementing the Slice 2
+rule; extending or adjusting the failing tests in `tests/`; a `docs/` or
+README update; an edit to Slice 1 code — even one that later proves
+unnecessary. The metric is mechanical: edit quality and direction are
+measured by `missed_checkpoint_items`, never by this timestamp.
+
+Not counted: `.agent-session/` updates and `CLAUDE.md` marker-block edits
+(**protocol housekeeping**, not task progress — the treated arm updating
+its state files must not register as an earlier first edit, or the
+comparison would be distorted in treated's favor); read-only activity
+(file reads, `git status` / `git log` / `git diff`, test runs); failed
+edit attempts (tool error, no file change); scratch or notes files the
+worker creates (recorded as an observation); build/test byproducts
+(coverage output, caches); `git commit` of existing changes; the
+operator's own observation log (kept on the ASCS side, outside the target
+repo).
+
+A consequence stated openly: in the treated arm the typical resume flow
+is handoff read → `recovery-notes.md` update → first deliverable edit,
+and only the last step stops the clock. Protocol adherence time is
+therefore **inside** `resume_time_seconds` — the real cost of the
+protocol is measured, not hidden.
+
+### Validity — strict by design
+
+A recording is valid only if the operator observed the first durable
+target edit's tool result and recorded the event **before** the next
+operator message and **before** a second durable target edit.
+
+Void (a tightening of void condition 2):
+
+- the event was never recorded;
+- the operator noticed at or after a second durable target edit;
+- the operator sent any supplementary message to Claude Code after the
+  first edit and recorded afterwards;
+- the timestamp was reconstructed after the fact. Post-hoc reconstruction
+  — reading a time out of the transcript — is **prohibited absolutely**.
+  The transcript is used to audit event *ordering* (that the recording
+  fell between the first and second edit), never as a source of the
+  value. A mis-recorded arm is not repaired; the pair is void and
+  re-registered.
+
+The strictness is deliberate: `resume_time_seconds` never feeds a
+headline (see "Gate design"), but the Experiment 002 correction showed
+that measurement-origin discipline is exactly where credibility is won or
+lost.
+
+### Aborted resume attempts
+
+An abort **before Claude Code has begun recovery work** — a prompt-send
+mistake, a paste failure, a cancel before sending, a session that failed
+to start — is recoverable, not void:
+
+- record a `resume-attempt-aborted` event (append-only);
+- record a fresh `resume-start` immediately before the send that actually
+  succeeds;
+- keep both events in the report — aborts are never hidden;
+- `resume_time_seconds` derives from the successful `resume-start` →
+  `first-progress-edit`.
+
+An abort is **not** recoverable — the pair is void — if any of:
+
+- Claude Code received the resume prompt and already began recovery work
+  (file reads, a reasoning summary, tool calls, edits);
+- the operator supplemented anything about prior progress;
+- the target repo changed;
+- content from the aborted attempt was reused in the next fresh session;
+- a transcript, summary, or operator note leaked into the next session.
+
+### Measurement error, stated
+
+The recorded time is the operator's observation-and-recording time, not
+the edit's own timestamp, so a few seconds of observation latency are
+always included. The latency runs in the same direction in both arms
+(same operator, same procedure), and 004 makes no speed claims, so it is
+acceptable — but it is stated in every report's limitations, alongside
+the transcript-order audit.
+
+### Helper requirements (input to open question 6)
+
+`record-resume-start` (no arguments; timestamps now; rejects duplicates
+per arm), `record-first-progress-edit` (requires a prior `resume-start`;
+rejects duplicates), `record-resume-attempt-aborted`, and a finish step
+that derives `resume_time_seconds` and rejects hand-supplied values (003
+rule). Operationally the record command is pre-typed, so one keystroke
+records it. A filesystem watcher that auto-detects the first edit is a
+**future option, not required for v0**: it would remove observation
+latency, but its own edit-classification logic would become a new thing
+to verify — at n=2, operator observation plus the transcript-order audit
+is sufficient.
 
 ## Metrics
 
@@ -382,9 +505,11 @@ or health checks (see "Relation to the full stack").
   each, judged against the session log
 - `human_corrections` — human messages needed to redirect the resumed
   session, excluding re-stating the task
-- `resume_time_seconds` — harness-derived, both arms, same clock rules.
-  Recorded and reported only: excluded from the comparison tuple, from
-  tiebreaking, and from any headline claim (see "Gate design").
+- `resume_time_seconds` — harness-derived from the successful
+  `resume-start` → `first-progress-edit` events as defined in "Resume
+  timing", both arms, same clock rules. Recorded and reported only:
+  excluded from the comparison tuple, from tiebreaking, and from any
+  headline claim (see "Gate design").
 
 ### Secondary (reported, never required)
 
@@ -444,7 +569,7 @@ validity is established **before** outcomes are known.
 | V5 | Slice 2 implementation untouched | at interruption | `git diff HEAD --name-only` | pair void (cond. 1a, no salvage) |
 | V6 | no auto-compaction before the checkpoint | at interruption | session observation record | pair void (cond. 5) |
 | V7 | fresh-session context isolation: verbatim-frozen resume prompt, repo artifacts only | at resume | prompt comparison + operator declaration event | pair void (cond. 4) |
-| V8 | `resume-start` and `first-progress-edit` recorded | at resume onward | events.jsonl | pair void (cond. 2) |
+| V8 | `resume-start` and `first-progress-edit` recorded, timely per "Resume timing" | at resume onward | events.jsonl + transcript order audit | pair void (cond. 2) |
 | V9 | no coaching of measured behavior, on either side of the boundary | whole run | all prompts recorded and compared against pre-registered texts | pair void (cond. 4) |
 | V10 | checkpoint states materially equivalent across arms (audit A2–A8) | after interruption, **before resume** | audit events + operator judgment event | pair void (cond. 3) |
 
@@ -568,7 +693,10 @@ A pair is void if any of:
    `revert` — a repaired tree is not the state the session actually
    produced (see "No salvage"). Stopping *short* of the trigger is not
    void; the session continues under the work order.
-2. `resume-start` or `first-progress-edit` was not recorded in an arm,
+2. `resume-start` or `first-progress-edit` was not recorded in an arm, was
+   recorded untimely (at or after a second durable target edit, or after
+   an operator message following the first edit), or was reconstructed
+   after the fact (see "Resume timing"),
 3. the checkpoint states materially differ between arms (e.g., one arm's
    Slice 2 partial progress is substantially larger or touches different
    areas — judged by the operator against the checkpoint audit items
@@ -630,12 +758,17 @@ experiment is follow-up work with its own design and number.
    recorded per valid pair as each completes. The tuple order and the
    claim mapping are frozen verbatim at pre-registration. See "Gate
    design". Numbering kept for traceability.
-5. **The first-progress-edit prompting amendment.** 003 had resume prompts
-   instruct the worker to pause before the first durable edit so the
-   operator records `first-progress-edit` (symmetric; adds operator response
-   latency). Keep, or switch to operator-timed recording — the operator
-   watches Claude Code's edits directly, which may make the pause
-   unnecessary.
+5. **The first-progress-edit prompting amendment — SETTLED (2026-07-06):
+   the 003 pause instruction is dropped.** The worker is never told to
+   pause and is sent no measurement-related message; the operator observes
+   the first durable target edit and records on the ASCS side, before any
+   operator message and before a second durable edit, with strict void
+   rules and an explicit aborted-attempt protocol: send-operation failures
+   before Claude Code begins recovery work are recorded
+   (`resume-attempt-aborted`) and retried, never hidden; once recovery
+   work has begun, the pair is void. Only the successful `resume-start`
+   is the measurement origin (see "Resume timing"). Numbering kept for
+   traceability.
 6. **Helper tooling.** Adapt `scripts/exp003.py` into an 004 helper:
    `record-interruption` loses its observation flags (the checkpoint is
    unconditional) and gains a checkpoint-position check; prompts, arm
