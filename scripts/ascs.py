@@ -37,6 +37,18 @@ METRIC_KEYS = [
     "human_corrections",
 ]
 
+EXPERIMENT_004_METRIC_KEYS = [
+    "resume_time_seconds",
+    "missed_checkpoint_items",
+    "missed_state_files",
+    "human_corrections",
+    "recovery_quality",
+]
+
+GATE_PROFILE_DEFAULT = "default"
+GATE_PROFILE_EXPERIMENT_004 = "experiment-004"
+GATE_PROFILES = (GATE_PROFILE_DEFAULT, GATE_PROFILE_EXPERIMENT_004)
+
 # Reported for comparison, never gated on. Optional so that experiments
 # recorded before it existed (001, 002) still score.
 OPTIONAL_METRIC_KEYS = [
@@ -136,9 +148,22 @@ def markdown_report(data: dict[str, Any], existing_report: str | None = None) ->
                 "| Metric | Value |",
                 "|---|---:|",
                 f"| resume_time_seconds | {metrics.get('resume_time_seconds', '')} |",
+                *(
+                    [f"| missed_checkpoint_items | {metrics['missed_checkpoint_items']} |"]
+                    if "missed_checkpoint_items" in metrics
+                    else []
+                ),
                 f"| missed_state_files | {metrics.get('missed_state_files', '')} |",
-                f"| repeated_failures | {metrics.get('repeated_failures', '')} |",
-                f"| rejected_option_relapses | {metrics.get('rejected_option_relapses', '')} |",
+                *(
+                    [f"| repeated_failures | {metrics['repeated_failures']} |"]
+                    if "repeated_failures" in metrics
+                    else []
+                ),
+                *(
+                    [f"| rejected_option_relapses | {metrics['rejected_option_relapses']} |"]
+                    if "rejected_option_relapses" in metrics
+                    else []
+                ),
                 f"| human_corrections | {metrics.get('human_corrections', '')} |",
             ]
         )
@@ -259,6 +284,7 @@ def init_experiment(args: argparse.Namespace) -> int:
         "target_repo": args.target_repo,
         "events_file": "events.jsonl",
         "report_file": "report.md",
+        "gate_profile": args.gate_profile,
         "metrics": {},
         "score": {},
     }
@@ -308,20 +334,47 @@ def record_event(args: argparse.Namespace) -> int:
     return 0
 
 
-def failed_criteria(metrics: dict[str, int]) -> list[str]:
+def metric_as_int(metrics: dict[str, Any], key: str) -> int:
+    value = metrics[key]
+    if isinstance(value, bool):
+        raise ValueError(f"{key} must be an integer, got boolean")
+    if isinstance(value, int):
+        return value
+    return int(value)
+
+
+def parse_count_or_na(value: str) -> int | str:
+    if value.lower() in {"n/a", "na"}:
+        return "n/a"
+    return int(value)
+
+
+def failed_criteria(metrics: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     if metrics["missed_state_files"] != 0:
         failures.append("missed_state_files != 0")
-    if metrics["repeated_failures"] != 0:
+    if metric_as_int(metrics, "repeated_failures") != 0:
         failures.append("repeated_failures != 0")
-    if metrics["rejected_option_relapses"] != 0:
+    if metric_as_int(metrics, "rejected_option_relapses") != 0:
         failures.append("rejected_option_relapses != 0")
-    if metrics["human_corrections"] > 1:
+    if metric_as_int(metrics, "human_corrections") > 1:
         failures.append("human_corrections > 1")
     return failures
 
 
-def status_for_metrics(metrics: dict[str, int]) -> dict[str, Any]:
+def status_for_metrics(
+    metrics: dict[str, Any],
+    gate_profile: str = GATE_PROFILE_DEFAULT,
+) -> dict[str, Any]:
+    if gate_profile == GATE_PROFILE_EXPERIMENT_004:
+        return {
+            "status": "REPORTED_ONLY",
+            "failed_criteria": [],
+            "failed_criteria_count": 0,
+            "scored_at": now_iso(),
+            "gate_profile": gate_profile,
+        }
+
     failures = failed_criteria(metrics)
     if not failures:
         status = "PASS"
@@ -334,11 +387,16 @@ def status_for_metrics(metrics: dict[str, int]) -> dict[str, Any]:
         "failed_criteria": failures,
         "failed_criteria_count": len(failures),
         "scored_at": now_iso(),
+        "gate_profile": gate_profile,
     }
 
 
-def calculate_score(metrics: dict[str, int], scored_at: str | None = None) -> dict[str, Any]:
-    score = status_for_metrics(metrics)
+def calculate_score(
+    metrics: dict[str, Any],
+    scored_at: str | None = None,
+    gate_profile: str = GATE_PROFILE_DEFAULT,
+) -> dict[str, Any]:
+    score = status_for_metrics(metrics, gate_profile)
     if scored_at is not None:
         score["scored_at"] = scored_at
     return score
@@ -412,18 +470,53 @@ def finish_experiment(args: argparse.Namespace) -> int:
         )
 
     data = read_json(experiment_json)
-    metrics = {
+    gate_profile = args.gate_profile
+    data_gate_profile = data.get("gate_profile")
+    if data_gate_profile in GATE_PROFILES and args.gate_profile == GATE_PROFILE_DEFAULT:
+        gate_profile = data_gate_profile
+
+    if gate_profile == GATE_PROFILE_DEFAULT and args.missed_state_files == "n/a":
+        print(
+            "FAIL --missed-state-files n/a is only valid with --gate-profile experiment-004",
+            file=sys.stderr,
+        )
+        return 1
+    if gate_profile == GATE_PROFILE_DEFAULT and (
+        args.repeated_failures is None or args.rejected_option_relapses is None
+    ):
+        print(
+            "FAIL --repeated-failures and --rejected-option-relapses are required "
+            "with the default gate profile",
+            file=sys.stderr,
+        )
+        return 1
+    if gate_profile == GATE_PROFILE_EXPERIMENT_004 and (
+        args.missed_checkpoint_items is None or args.recovery_quality is None
+    ):
+        print(
+            "FAIL --missed-checkpoint-items and --recovery-quality are required "
+            "with --gate-profile experiment-004",
+            file=sys.stderr,
+        )
+        return 1
+
+    metrics: dict[str, Any] = {
         "resume_time_seconds": resume_time,
         "missed_state_files": args.missed_state_files,
-        "repeated_failures": args.repeated_failures,
-        "rejected_option_relapses": args.rejected_option_relapses,
         "human_corrections": args.human_corrections,
     }
+    if args.repeated_failures is not None:
+        metrics["repeated_failures"] = args.repeated_failures
+    if args.rejected_option_relapses is not None:
+        metrics["rejected_option_relapses"] = args.rejected_option_relapses
+    if args.missed_checkpoint_items is not None:
+        metrics["missed_checkpoint_items"] = args.missed_checkpoint_items
     if args.recovery_quality is not None:
         metrics["recovery_quality"] = args.recovery_quality
     data["metrics"] = metrics
+    data["gate_profile"] = gate_profile
     data["finished_at"] = now_iso()
-    data["score"] = calculate_score(metrics)
+    data["score"] = calculate_score(metrics, gate_profile=gate_profile)
     write_json(experiment_json, data)
     report_path = experiment_dir / "report.md"
     existing_report = report_path.read_text(encoding="utf-8") if report_path.exists() else None
@@ -447,24 +540,45 @@ def score_experiment(args: argparse.Namespace) -> int:
 
     data = read_json(experiment_json)
     metrics = data.get("metrics", {})
-    missing = [key for key in METRIC_KEYS if key not in metrics]
+    gate_profile = data.get("gate_profile", GATE_PROFILE_DEFAULT)
+    if gate_profile not in GATE_PROFILES:
+        print(f"FAIL unknown gate_profile: {gate_profile}", file=sys.stderr)
+        return 1
+    required_keys = (
+        EXPERIMENT_004_METRIC_KEYS
+        if gate_profile == GATE_PROFILE_EXPERIMENT_004
+        else METRIC_KEYS
+    )
+    missing = [key for key in required_keys if key not in metrics]
     if missing:
         print(f"FAIL missing metrics: {', '.join(missing)}", file=sys.stderr)
         return 1
 
-    typed_metrics = {key: int(metrics[key]) for key in METRIC_KEYS}
+    typed_metrics: dict[str, Any] = {}
+    for key in required_keys:
+        if key == "missed_state_files" and metrics[key] == "n/a":
+            typed_metrics[key] = "n/a"
+        else:
+            typed_metrics[key] = int(metrics[key])
     existing_score = data.get("score", {})
     existing_scored_at = existing_score.get("scored_at") if isinstance(existing_score, dict) else None
-    score = calculate_score(typed_metrics, existing_scored_at)
+    score = calculate_score(typed_metrics, existing_scored_at, gate_profile)
 
     print("| Metric | Value | Criterion |")
     print("|---|---:|---|")
-    print(f"| missed_state_files | {typed_metrics['missed_state_files']} | must be 0 |")
-    print(f"| repeated_failures | {typed_metrics['repeated_failures']} | must be 0 |")
-    print(f"| rejected_option_relapses | {typed_metrics['rejected_option_relapses']} | must be 0 |")
-    print(f"| human_corrections | {typed_metrics['human_corrections']} | must be <= 1 |")
-    print(f"| resume_time_seconds | {typed_metrics['resume_time_seconds']} | reported only |")
-    if "recovery_quality" in metrics:
+    if gate_profile == GATE_PROFILE_EXPERIMENT_004:
+        print(f"| missed_checkpoint_items | {typed_metrics['missed_checkpoint_items']} | reported only; pair-verdict compares |")
+        print(f"| human_corrections | {typed_metrics['human_corrections']} | reported only; pair-verdict compares |")
+        print(f"| recovery_quality | {typed_metrics['recovery_quality']} | reported only; pair-verdict compares |")
+        print(f"| missed_state_files | {typed_metrics['missed_state_files']} | treated-only protocol adherence |")
+        print(f"| resume_time_seconds | {typed_metrics['resume_time_seconds']} | reported only |")
+    else:
+        print(f"| missed_state_files | {typed_metrics['missed_state_files']} | must be 0 |")
+        print(f"| repeated_failures | {typed_metrics['repeated_failures']} | must be 0 |")
+        print(f"| rejected_option_relapses | {typed_metrics['rejected_option_relapses']} | must be 0 |")
+        print(f"| human_corrections | {typed_metrics['human_corrections']} | must be <= 1 |")
+        print(f"| resume_time_seconds | {typed_metrics['resume_time_seconds']} | reported only |")
+    if "recovery_quality" in metrics and gate_profile != GATE_PROFILE_EXPERIMENT_004:
         print(f"| recovery_quality | {int(metrics['recovery_quality'])} | reported only (0-4) |")
     print("")
     print(f"Score: **{score['status']}**")
@@ -487,6 +601,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--name", required=True)
     init_parser.add_argument("--runtime", required=True, choices=("codex", "claude-code"))
     init_parser.add_argument("--target-repo", required=True)
+    init_parser.add_argument("--gate-profile", choices=GATE_PROFILES, default=GATE_PROFILE_DEFAULT)
     init_parser.set_defaults(func=init_experiment)
 
     record_parser = subparsers.add_parser("record", help="append an event to events.jsonl")
@@ -505,9 +620,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="cross-check only; resume_time_seconds is derived from "
         "resume-start/first-progress-edit events when they exist",
     )
-    finish_parser.add_argument("--missed-state-files", required=True, type=int)
-    finish_parser.add_argument("--repeated-failures", required=True, type=int)
-    finish_parser.add_argument("--rejected-option-relapses", required=True, type=int)
+    finish_parser.add_argument("--gate-profile", choices=GATE_PROFILES, default=GATE_PROFILE_DEFAULT)
+    finish_parser.add_argument("--missed-checkpoint-items", type=int, default=None)
+    finish_parser.add_argument("--missed-state-files", required=True, type=parse_count_or_na)
+    finish_parser.add_argument("--repeated-failures", type=int, default=None)
+    finish_parser.add_argument("--rejected-option-relapses", type=int, default=None)
     finish_parser.add_argument("--human-corrections", required=True, type=int)
     finish_parser.add_argument(
         "--recovery-quality",
