@@ -470,7 +470,7 @@ always included. The latency runs in the same direction in both arms
 acceptable — but it is stated in every report's limitations, alongside
 the transcript-order audit.
 
-### Helper requirements (input to open question 6)
+### Helper requirements (settled — see "Helper contract")
 
 `record-resume-start` (no arguments; timestamps now; rejects duplicates
 per arm), `record-first-progress-edit` (requires a prior `resume-start`;
@@ -481,7 +481,8 @@ records it. A filesystem watcher that auto-detects the first edit is a
 **future option, not required for v0**: it would remove observation
 latency, but its own edit-classification logic would become a new thing
 to verify — at n=2, operator observation plus the transcript-order audit
-is sufficient.
+is sufficient. These requirements are settled into the full command
+contract in "Helper contract".
 
 ## Metrics
 
@@ -720,6 +721,78 @@ Operationally, these conditions are checked as the validity-gate items
 V1–V10 in "Gate design", which adds check timing and evidence but defines
 no new conditions.
 
+## Helper contract — SETTLED (2026-07-06)
+
+The 004 operator helper is `scripts/exp004.py`, adapted from
+`scripts/exp003.py`. **It is not yet implemented**; implementation follows
+this contract. Its purpose is to move the settled rules out of operator
+attention and into command preconditions: whatever is machine-verifiable,
+a command refuses on; whatever needs operator judgment is taken as an
+explicit attestation flag and recorded as an event.
+
+### Arm isolation (A0) as implemented by the helper
+
+`prepare-arm` clones each arm into its **own checkout directory** at
+`~/projects/_sandbox/ascs-exp004/<arm>/supabase-rls-guard`. An existing
+directory is refused, so running multiple arms by branch-switching inside
+one checkout is structurally impossible, not merely prohibited. The
+`isolation-setup` event records the checkout path, the resolved base
+commit, and a checksum of the operator's global instruction file
+(`~/.claude/CLAUDE.md`) — a symmetric environmental constant that cannot
+be removed, made auditable for within-pair constancy instead. A check of
+`~/.claude/projects/` for pre-existing Claude Code project state hard-fails
+only where the path mapping is detected exactly; otherwise it warns and
+takes an operator attestation — A0's primary guarantees are the unique
+checkout directory and the isolation event.
+
+### Treated-arm scaffold
+
+The `CLAUDE.md` marker block (exp-004 markers) carries the protocol text
+finalized in `examples/claude-code/stack-demo/CLAUDE.md.example` — frozen
+before pre-registration precisely so it cannot drift mid-experiment. The
+initial `.agent-session/` content is a **neutral scaffold frozen at
+pre-registration**: no prior knowledge, no fictional tasks, only the blank
+sections and recording fields the protocol needs. The stack-demo's
+fictional state files are never used (Dogfood 0.1 showed fictional content
+must be detected and worked around — an experiment arm must not start with
+that burden).
+
+### Command surface → rule mapping
+
+| Command | Enforces |
+|---|---|
+| `doctor` | readiness; checkout-collision check; project-state warning |
+| `prepare-arm <arm> --base <commit>` | V1/V2/A0/A1; condition setup; `isolation-setup` + `arm_start` events; prints the first-session prompt |
+| `check-checkpoint <arm>` | read-only mechanical checks of C1, P1, P3/A4/A5; records nothing; repeatable |
+| `record-interruption <arm> --slice1-suite-green --checkpoint-suite-red-only-slice2 --failing-count N` | re-runs the mechanical checks and refuses on failure, naming the matching void condition (1a implementation touched / 1b tests committed); suite results (C2/C4) enter as operator attestation flags; writes `interruption_reached` with the machine-captured A1–A5 signature and the A3 failing count |
+| `verify-pair-checkpoint <pair> [--scope-differs]` | V10 **before any resume**: cross-arm audit comparison; A6 judgment with both counts recorded to both arms as `pair-checkpoint-audit`; prerequisite for all resume commands |
+| `print-prompt <arm> --phase first\|resume` | prompt copying happens before recording, keeping copy time outside the measured interval |
+| `record-resume-start <arm>` | requires `interruption_reached` and `pair-checkpoint-audit`; refuses if `first-progress-edit` exists; a duplicate is allowed only directly after a `resume-attempt-aborted`; records only, then instructs the immediate send |
+| `record-resume-attempt-aborted <arm> --reason <text> --no-recovery-work-started` | the attestation flag is mandatory; without it the command refuses and points to the void rule (recovery work begun = not recoverable) |
+| `record-first-progress-edit <arm>` | requires a prior `resume-start`; rejects duplicates; argument-free so a pre-typed invocation records in one keystroke; prints the timeliness rule as a reminder (the part no command can verify) |
+| `finish-arm <arm> --missed-checkpoint-items N --human-corrections N --recovery-quality 0..4 [--missed-state-files N\|na] [...]` | calls `ascs.py finish`; `resume_time_seconds` is event-derived only (hand-supplied values rejected — existing `ascs.py` behavior); never calls `ascs.py score` |
+| `pair-verdict <pair>` | machine-computes the Layer 2 lexicographic verdict and records it as an append-only `pair-verdict` event, with absolute values printed alongside and `resume_time_seconds` labeled "reported only"; refuses pairs with a void event — no verdict arithmetic is ever done by hand |
+| `claim-check` | refuses until **two valid pairs** exist; then prints only the permitted public statement from the frozen Layer 3 mapping plus the full forbidden-claims list; read-only |
+| `record-void-pair <pair> --condition 1a\|1b\|2\|3\|4\|5\|6 --note <text>` | the condition number is a mandatory argument — an unspecified void cannot be recorded |
+| `status <arm>` | event listing, unchanged from 003 |
+
+### What the helper never does
+
+Start Claude Code; push, open PRs or issues; write under `experiments/`
+directly (all events go through `ascs.py record`, append-only); repair the
+target repo — the helper has no reset/amend/revert commands at all, making
+"no salvage" structural; accept a hand-computed resume time; ship a
+filesystem watcher (a v0 non-goal per "Resume timing").
+
+### `ascs.py` minimal extensions
+
+Three backward-compatible changes: `finish` gains
+`--missed-checkpoint-items`; `--missed-state-files` accepts `n/a` for
+baseline arms (the metric is treated-only in 004); `experiment.json` gains
+a gate-profile field under which `score` applies **no absolute gate** for
+004 experiments (reported-only output). Regression tests that re-score the
+existing 003 directories unchanged are **mandatory** before any 004 use.
+
 ## Relation to the full stack
 
 ASCS also ships hooks, compact-plus, session-health, and pxpipe. Claude Code
@@ -769,12 +842,25 @@ experiment is follow-up work with its own design and number.
    work has begun, the pair is void. Only the successful `resume-start`
    is the measurement origin (see "Resume timing"). Numbering kept for
    traceability.
-6. **Helper tooling.** Adapt `scripts/exp003.py` into an 004 helper:
-   `record-interruption` loses its observation flags (the checkpoint is
-   unconditional) and gains a checkpoint-position check; prompts, arm
-   definitions, marker handling (`CLAUDE.md` instead of `AGENTS.md`), and
-   tests follow the final task and method choices. `ascs.py init` runtime
-   label becomes `claude-code`.
+6. **Helper tooling — SETTLED (2026-07-06): `scripts/exp004.py` under the
+   contract in "Helper contract".** Adapted from `scripts/exp003.py`; not
+   yet implemented. Key changes from 003: per-arm isolated checkouts under
+   `~/projects/_sandbox/ascs-exp004/<arm>/supabase-rls-guard` (existing
+   directory refused — branch-switch multi-arm structurally impossible);
+   `record-interruption` loses the natural-observation flags and gains
+   mechanical checkpoint-shape checks plus two suite attestation flags;
+   the 003 resume prompt's measurement paragraph is removed; prompt
+   printing is separated from `record-resume-start`;
+   `record-resume-attempt-aborted` is added; `ascs.py score` is never
+   called — Layers 2/3 run through `pair-verdict` and `claim-check`. The
+   treated `.agent-session/` initial content is a neutral scaffold frozen
+   at pre-registration, never the stack-demo fictional state. `ascs.py`
+   gets three backward-compatible extensions (`--missed-checkpoint-items`;
+   `n/a` for `--missed-state-files`; a 004 gate profile under which
+   `score` applies no absolute gate), with mandatory regression tests that
+   003 directories re-score unchanged. `ascs.py init` already supports the
+   `claude-code` runtime label. Marker handling moves to `CLAUDE.md`
+   (exp-004 markers). Numbering kept for traceability.
 7. **Stop-trigger precision — SETTLED (2026-07-06): the test-first
    boundary.** Slice 1 complete and committed; Slice 2 present only as
    uncommitted failing tests; interruption at the end of the first
