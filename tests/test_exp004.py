@@ -102,9 +102,6 @@ class TestSetup(unittest.TestCase):
 
     def test_treated_setup_appends_claude_marker_and_copies_frozen_scaffold(self):
         (self.repo / "CLAUDE.md").write_text("# Existing\n", encoding="utf-8")
-        stale = self.repo / ".agent-session/stale.md"
-        stale.parent.mkdir()
-        stale.write_text("stale\n", encoding="utf-8")
         with quiet():
             status = exp004.setup_treated(self.repo)
         self.assertEqual(status, 0)
@@ -120,7 +117,33 @@ class TestSetup(unittest.TestCase):
                 (source / rel).read_text(encoding="utf-8"),
                 str(rel),
             )
-        self.assertFalse(stale.exists())
+        self.assertEqual(exp004.scaffold_tree_hash(source), exp004.scaffold_tree_hash(dest))
+
+    def test_treated_setup_rejects_existing_agent_session_without_removing_it(self):
+        existing = self.repo / ".agent-session/stale.md"
+        existing.parent.mkdir()
+        existing.write_text("stale\n", encoding="utf-8")
+        with quiet() as (_out, err):
+            status = exp004.setup_treated(self.repo)
+        self.assertEqual(status, 1)
+        self.assertIn("contamination risk", err.getvalue())
+        self.assertTrue(existing.exists())
+        self.assertEqual(existing.read_text(encoding="utf-8"), "stale\n")
+
+    def test_isolation_setup_note_records_treated_scaffold_hash_evidence(self):
+        with quiet():
+            status = exp004.setup_treated(self.repo)
+        self.assertEqual(status, 0)
+        note = exp004.isolation_setup_note(
+            exp004.arm_from_name("004-p1-treated"),
+            self.repo,
+            "a" * 40,
+        )
+        source_hash = exp004.scaffold_tree_hash(exp004.frozen_shared_scaffold_path())
+        dest_hash = exp004.scaffold_tree_hash(self.repo / ".agent-session")
+        self.assertIn(f"frozen scaffold tree sha256: {source_hash}", note)
+        self.assertIn(f"copied .agent-session tree sha256: {dest_hash}", note)
+        self.assertIn("scaffold hashes match: true", note)
 
 
 class TestCheckpointSignature(unittest.TestCase):

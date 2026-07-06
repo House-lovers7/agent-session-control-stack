@@ -281,6 +281,20 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def scaffold_file_hashes(root: Path) -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            hashes[path.relative_to(root).as_posix()] = sha256_file(path)
+    return hashes
+
+
+def scaffold_tree_hash(root: Path) -> str:
+    file_hashes = scaffold_file_hashes(root)
+    payload = json.dumps(file_hashes, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def global_claude_checksum() -> str:
     return sha256_file(Path("~/.claude/CLAUDE.md").expanduser())
 
@@ -312,14 +326,20 @@ def verify_frozen_shared_scaffold() -> int:
 
 def setup_treated(checkout: Path) -> int:
     claude_path = checkout / "CLAUDE.md"
-    if not claude_path.exists():
-        claude_path.write_text("# CLAUDE.md\n", encoding="utf-8")
-    content = claude_path.read_text(encoding="utf-8")
+    content = claude_path.read_text(encoding="utf-8") if claude_path.exists() else ""
     if MARKER_BEGIN in content or MARKER_END in content:
         return fail("target CLAUDE.md already contains an exp-004 ASCS marker")
     session_dir = checkout / ".agent-session"
+    if session_dir.exists():
+        return fail(
+            "treated target repo already contains .agent-session/; "
+            "contamination risk, preserving existing files as evidence"
+        )
     if verify_frozen_shared_scaffold():
         return 1
+    if not claude_path.exists():
+        claude_path.write_text("# CLAUDE.md\n", encoding="utf-8")
+        content = claude_path.read_text(encoding="utf-8")
     scaffold = (ascs_root() / "examples/claude-code/stack-demo/CLAUDE.md.example").read_text(
         encoding="utf-8"
     )
@@ -334,8 +354,6 @@ def setup_treated(checkout: Path) -> int:
         f.write(MARKER_END)
         f.write("\n")
 
-    if session_dir.exists():
-        shutil.rmtree(session_dir)
     shutil.copytree(frozen_shared_scaffold_path(), session_dir)
     return verify_treated_setup(checkout)
 
@@ -362,7 +380,35 @@ def verify_treated_setup(checkout: Path) -> int:
     missing = [path for path in REQUIRED_STATE_FILES if not (session_dir / path).exists()]
     if missing:
         return fail("treated .agent-session/ is missing files: " + ", ".join(missing))
+    source_hash = scaffold_tree_hash(frozen_shared_scaffold_path())
+    dest_hash = scaffold_tree_hash(session_dir)
+    if source_hash != dest_hash:
+        return fail(
+            "treated .agent-session/ hash does not match frozen shared scaffold: "
+            f"source={source_hash} dest={dest_hash}"
+        )
     return 0
+
+
+def treated_scaffold_evidence(checkout: Path) -> str:
+    source_hash = scaffold_tree_hash(frozen_shared_scaffold_path())
+    dest_hash = scaffold_tree_hash(checkout / ".agent-session")
+    return (
+        f"frozen scaffold tree sha256: {source_hash}; "
+        f"copied .agent-session tree sha256: {dest_hash}; "
+        f"scaffold hashes match: {str(source_hash == dest_hash).lower()}"
+    )
+
+
+def isolation_setup_note(arm: Arm, checkout: Path, base_hash: str) -> str:
+    note = (
+        f"isolation-setup; checkout: {checkout}; base commit: {base_hash}; "
+        f"global CLAUDE.md sha256: {global_claude_checksum()}; "
+        f"project-state: {maybe_project_state_warning(checkout)}"
+    )
+    if arm.condition == "treated":
+        note += "; " + treated_scaffold_evidence(checkout)
+    return note
 
 
 def build_prompt(arm: Arm, phase: str) -> str:
@@ -527,12 +573,7 @@ def command_prepare_arm(args: argparse.Namespace) -> int:
         if setup_treated(checkout):
             return 1
 
-    isolation_note = (
-        f"isolation-setup; checkout: {checkout}; base commit: {base_hash}; "
-        f"global CLAUDE.md sha256: {global_claude_checksum()}; "
-        f"project-state: {maybe_project_state_warning(checkout)}"
-    )
-    if record_event(arm, "isolation-setup", isolation_note):
+    if record_event(arm, "isolation-setup", isolation_setup_note(arm, checkout, base_hash)):
         return 1
     arm_start_note = (
         f"arm_start; condition: {arm.condition}; task: {arm.task}; "
