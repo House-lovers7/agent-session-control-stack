@@ -1,0 +1,19 @@
+{
+  "ascs_base_commit": "ae3f4b6",
+  "checkpoint": "test-first boundary",
+  "condition": "baseline",
+  "created_at": "2026-07-06T14:49:30+00:00",
+  "events_file": "events.jsonl",
+  "gate_profile": "experiment-004",
+  "interruption": "fresh-session restart",
+  "metrics": {},
+  "name": "004-p2-baseline",
+  "order": 4,
+  "pair": "2",
+  "report_file": "report.md",
+  "runtime": "claude-code",
+  "score": {},
+  "target_base_commit": "563ad47",
+  "target_repo": "supabase-rls-guard",
+  "task": "T-B: CREATE TABLE AS modeling + Splinter 0004 no_primary_key"
+}

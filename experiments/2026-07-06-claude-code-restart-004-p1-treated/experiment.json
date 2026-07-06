@@ -1,0 +1,19 @@
+{
+  "ascs_base_commit": "ae3f4b6",
+  "checkpoint": "test-first boundary",
+  "condition": "treated",
+  "created_at": "2026-07-06T14:49:30+00:00",
+  "events_file": "events.jsonl",
+  "gate_profile": "experiment-004",
+  "interruption": "fresh-session restart",
+  "metrics": {},
+  "name": "004-p1-treated",
+  "order": 2,
+  "pair": "1",
+  "report_file": "report.md",
+  "runtime": "claude-code",
+  "score": {},
+  "target_base_commit": "563ad47",
+  "target_repo": "supabase-rls-guard",
+  "task": "T-A: ALTER POLICY RENAME tracking + extension_in_public"
+}
