@@ -75,6 +75,13 @@ workflow では、この stack を追加する前に
 - [docs/measurement-plan.md](docs/measurement-plan.md) · [docs/risk-register.md](docs/risk-register.md)（リスク・未検証点・撤退基準）
 - [docs/measurement-harness.md](docs/measurement-harness.md) — `scripts/ascs.py`（repo 形状チェック + 手動の実験記録ヘルパー）。Phase 4+ の自動 tooling とは別物。[experiments/](experiments/) の初期ランは harness 自体の動作検証で、Experiment 002（[summary](experiments/2026-07-06-codex-handoff-002-summary.md)）が Codex handoff protocol の最初の手動 n=1 before/after ペア — 整合性の証拠であり、合成効果の検証ではない
 
+`scripts/ascs.py measure` は、Experiment 004 から始める最初の保守的な claim-boundary measure path です。ASCS evidence-loop evidence、upstream runtime evidence、composition evidence、根拠のない主張の一覧を機械判定で出力します（[モデル](docs/claim-boundary-model.md)）。証跡ファイルを読み取り、明示された非証跡 `--output` パスにだけ書き込みます:
+
+```sh
+python3 scripts/ascs.py measure --experiment 004
+python3 scripts/ascs.py measure --experiment 004 --format markdown --output reports/experiment-004-claim-boundary.md
+```
+
 ## Evidence status
 
 ASCS は full-stack の composition effect をまだ測定していません。
@@ -85,8 +92,9 @@ ASCS は full-stack の composition effect をまだ測定していません。
 - Experiment 003 における事前登録済みの void 処理と closeout
 - Claude Code reference integration v0 と、ローカルでの Dogfood 0.1 usability / safety 確認
 - 実験記録と product work の分離
+- Experiment 004 は valid comparison なしで停止（Pair 1 は operator の scope_differs 監査により void condition 3、Pair 2 は未実行）。この claim boundary は文章ではなく `scripts/ascs.py measure` が機械判定します
 
-次: Experiment 004 で、fixed-checkpoint 設計による Claude Code の fresh-session restart recovery を検証します。
+次: Experiment 005 — 条件を標準化（標準 runtime は Opus）した事前登録済みの fresh-session restart 実験を再設計します。
 
 ## Attribution
 
