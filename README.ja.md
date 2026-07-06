@@ -75,11 +75,31 @@ workflow では、この stack を追加する前に
 - [docs/measurement-plan.md](docs/measurement-plan.md) · [docs/risk-register.md](docs/risk-register.md)（リスク・未検証点・撤退基準）
 - [docs/measurement-harness.md](docs/measurement-harness.md) — `scripts/ascs.py`（repo 形状チェック + 手動の実験記録ヘルパー）。Phase 4+ の自動 tooling とは別物。[experiments/](experiments/) の初期ランは harness 自体の動作検証で、Experiment 002（[summary](experiments/2026-07-06-codex-handoff-002-summary.md)）が Codex handoff protocol の最初の手動 n=1 before/after ペア — 整合性の証拠であり、合成効果の検証ではない
 
-`scripts/ascs.py measure` は、Experiment 004 から始める最初の保守的な claim-boundary measure path です。ASCS evidence-loop evidence、upstream runtime evidence、composition evidence、根拠のない主張の一覧を機械判定で出力します（[モデル](docs/claim-boundary-model.md)）。証跡ファイルを読み取り、明示された非証跡 `--output` パスにだけ書き込みます:
+ASCS は設計文書だけの段階を越え、`scripts/ascs.py measure` という最初の保守的な claim-boundary measure path を持っています。対象は Experiment 004 からです。記録済みの Experiment 004 evidence について保守的なレポートを生成し、stopped / void / not-run evidence を productivity claim なしで分類し、core evidence file を上書きする `--output` パスを拒否できます。
+
+ASCS evidence-loop evidence、upstream runtime evidence、composition evidence、根拠のない主張の一覧を機械判定で出力します（[モデル](docs/claim-boundary-model.md)）。証跡ファイルを読み取り、明示された非証跡 `--output` パスにだけ書き込みます:
 
 ```sh
 python3 scripts/ascs.py measure --experiment 004
-python3 scripts/ascs.py measure --experiment 004 --format markdown --output reports/experiment-004-claim-boundary.md
+python3 scripts/ascs.py measure --experiment 004 --format markdown \
+  --output /tmp/experiment-004-claim-boundary.md
+```
+
+出力例（Experiment 004、抜粋）:
+
+```text
+ASCS MEASURE RESULT
+- Experiment status: STOPPED / no valid comparison
+- Pair statuses:
+  - Pair 1: VOID condition 3 (void pair; no treated-vs-baseline claim)
+  - Pair 2: NOT RUN (incomplete pair; not a failure)
+- Evidence level: evidence-loop validation only
+- ASCS evidence-loop: checkpoint recording evidence; no recovery evidence
+- Layer evidence:
+  - compression (pxpipe (teamchong)): no evidence
+  - health_detection (claude-code-session-health (House-lovers7)): no evidence
+  - checkpoint_recovery (compact-plus (u-ichi)): no evidence
+- Composition evidence: no composition evidence
 ```
 
 ## Evidence status
