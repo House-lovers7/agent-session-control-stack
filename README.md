@@ -75,6 +75,18 @@ This repository defines what "it works" would mean before claiming it: metrics, 
 - [docs/measurement-plan.md](docs/measurement-plan.md) · [docs/risk-register.md](docs/risk-register.md) (risks, unverified points, withdrawal criteria)
 - [docs/measurement-harness.md](docs/measurement-harness.md) — `scripts/ascs.py`, a manual Phase 2 recording helper (repo-shape doctor + experiment capture). It is not the Phase 4+ automated tooling. The early runs under [experiments/](experiments/) validate the harness itself; Experiment 002 ([summary](experiments/2026-07-06-codex-handoff-002-summary.md)) is the first manual n=1 before/after pair for the Codex handoff protocol — consistency evidence only, and still not the composition effect.
 
+## Evidence status
+
+ASCS has not yet measured a full-stack composition effect.
+
+What is currently demonstrated:
+- public correction of an invalid Experiment 002 speed claim;
+- preregistered void handling and closeout in Experiment 003;
+- a Claude Code reference integration v0 with local Dogfood 0.1 usability/safety checks;
+- separation of experiment records from product work.
+
+Next: Experiment 004 will test Claude Code fresh-session restart recovery with a fixed-checkpoint design.
+
 ## Attribution
 
 This repository is an integration/reference architecture. It does not claim ownership of the underlying ideas or implementations. Credits and details: [ATTRIBUTION.md](ATTRIBUTION.md). If you are an upstream author and find anything misrepresented, please open an issue — corrections take priority.

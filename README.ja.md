@@ -75,6 +75,19 @@ workflow では、この stack を追加する前に
 - [docs/measurement-plan.md](docs/measurement-plan.md) · [docs/risk-register.md](docs/risk-register.md)（リスク・未検証点・撤退基準）
 - [docs/measurement-harness.md](docs/measurement-harness.md) — `scripts/ascs.py`（repo 形状チェック + 手動の実験記録ヘルパー）。Phase 4+ の自動 tooling とは別物。[experiments/](experiments/) の初期ランは harness 自体の動作検証で、Experiment 002（[summary](experiments/2026-07-06-codex-handoff-002-summary.md)）が Codex handoff protocol の最初の手動 n=1 before/after ペア — 整合性の証拠であり、合成効果の検証ではない
 
+## Evidence status
+
+ASCS は full-stack の composition effect をまだ測定していません。
+
+現時点で示せているもの:
+
+- Experiment 002 の無効な速度主張の公開訂正
+- Experiment 003 における事前登録済みの void 処理と closeout
+- Claude Code reference integration v0 と、ローカルでの Dogfood 0.1 usability / safety 確認
+- 実験記録と product work の分離
+
+次: Experiment 004 で、fixed-checkpoint 設計による Claude Code の fresh-session restart recovery を検証します。
+
 ## Attribution
 
 本リポジトリは統合・参照アーキテクチャであり、元のアイデアや実装の所有権を主張しません。クレジットの詳細は [ATTRIBUTION.md](ATTRIBUTION.md)。upstream 作者の方で記述の誤りを見つけた場合は issue を立ててください。訂正を最優先します。
