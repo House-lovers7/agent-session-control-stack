@@ -1,7 +1,8 @@
 # Experiment 004 Shared Scaffold
 
-This directory freezes the neutral state scaffold used by the treated arms.
-It contains no fictional task, prior knowledge, or task-specific hint.
+This directory freezes the neutral `.agent-session/` scaffold used by the
+treated arms. It contains no fictional task, prior knowledge, or task-specific
+hint.
 
 ## Pre-run doctor note
 

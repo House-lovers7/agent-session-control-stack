@@ -33,6 +33,9 @@ REQUIRED_STATE_FILES = [
     "state/recovery-notes.md",
 ]
 VOID_CONDITIONS = ("1a", "1b", "2", "3", "4", "5", "6")
+FROZEN_SHARED_SCAFFOLD = (
+    "experiments/2026-07-06-claude-code-restart-004-shared-scaffold/.agent-session"
+)
 
 
 @dataclass(frozen=True)
@@ -293,13 +296,18 @@ def maybe_project_state_warning(checkout: Path) -> str:
     return "no exact project state match detected"
 
 
-def write_neutral_state_file(path: Path, title: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        f"# {title}\n\n"
-        "<!-- Neutral Experiment 004 scaffold. Fill during the measured session. -->\n",
-        encoding="utf-8",
-    )
+def frozen_shared_scaffold_path() -> Path:
+    return ascs_root() / FROZEN_SHARED_SCAFFOLD
+
+
+def verify_frozen_shared_scaffold() -> int:
+    source = frozen_shared_scaffold_path()
+    if not source.is_dir():
+        return fail(f"frozen shared scaffold is missing: {source}")
+    missing = [path for path in REQUIRED_STATE_FILES if not (source / path).is_file()]
+    if missing:
+        return fail("frozen shared scaffold is missing files: " + ", ".join(missing))
+    return 0
 
 
 def setup_treated(checkout: Path) -> int:
@@ -310,8 +318,8 @@ def setup_treated(checkout: Path) -> int:
     if MARKER_BEGIN in content or MARKER_END in content:
         return fail("target CLAUDE.md already contains an exp-004 ASCS marker")
     session_dir = checkout / ".agent-session"
-    if session_dir.exists():
-        return fail("target repo already contains .agent-session/")
+    if verify_frozen_shared_scaffold():
+        return 1
     scaffold = (ascs_root() / "examples/claude-code/stack-demo/CLAUDE.md.example").read_text(
         encoding="utf-8"
     )
@@ -326,19 +334,9 @@ def setup_treated(checkout: Path) -> int:
         f.write(MARKER_END)
         f.write("\n")
 
-    (session_dir / "state").mkdir(parents=True)
-    shutil.copyfile(ascs_root() / "templates/session-handoff.md", session_dir / "handoff.md")
-    shutil.copyfile(
-        ascs_root() / "templates/state-file.md",
-        session_dir / "state" / "checkpoint.md",
-    )
-    shutil.copyfile(
-        ascs_root() / "templates/decision-log.md",
-        session_dir / "state" / "decision-log.md",
-    )
-    write_neutral_state_file(session_dir / "state" / "current-plan.md", "Current Plan")
-    write_neutral_state_file(session_dir / "state" / "failed-attempts.md", "Failed Attempts")
-    write_neutral_state_file(session_dir / "state" / "recovery-notes.md", "Recovery Notes")
+    if session_dir.exists():
+        shutil.rmtree(session_dir)
+    shutil.copytree(frozen_shared_scaffold_path(), session_dir)
     return verify_treated_setup(checkout)
 
 

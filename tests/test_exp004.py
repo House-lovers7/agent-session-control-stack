@@ -93,18 +93,34 @@ class TestSetup(unittest.TestCase):
             status = exp004.verify_baseline_setup(self.repo)
         self.assertEqual(status, 1)
 
-    def test_treated_setup_appends_claude_marker_and_neutral_state(self):
+    def scaffold_files(self, root):
+        return sorted(
+            path.relative_to(root)
+            for path in root.rglob("*")
+            if path.is_file()
+        )
+
+    def test_treated_setup_appends_claude_marker_and_copies_frozen_scaffold(self):
         (self.repo / "CLAUDE.md").write_text("# Existing\n", encoding="utf-8")
+        stale = self.repo / ".agent-session/stale.md"
+        stale.parent.mkdir()
+        stale.write_text("stale\n", encoding="utf-8")
         with quiet():
             status = exp004.setup_treated(self.repo)
         self.assertEqual(status, 0)
         claude = (self.repo / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertEqual(claude.count(exp004.MARKER_BEGIN), 1)
         self.assertEqual(claude.count(exp004.MARKER_END), 1)
-        for rel in exp004.REQUIRED_STATE_FILES:
-            self.assertTrue((self.repo / ".agent-session" / rel).exists(), rel)
-        current_plan = (self.repo / ".agent-session/state/current-plan.md").read_text(encoding="utf-8")
-        self.assertIn("Neutral Experiment 004 scaffold", current_plan)
+        source = exp004.frozen_shared_scaffold_path()
+        dest = self.repo / ".agent-session"
+        self.assertEqual(self.scaffold_files(dest), self.scaffold_files(source))
+        for rel in self.scaffold_files(source):
+            self.assertEqual(
+                (dest / rel).read_text(encoding="utf-8"),
+                (source / rel).read_text(encoding="utf-8"),
+                str(rel),
+            )
+        self.assertFalse(stale.exists())
 
 
 class TestCheckpointSignature(unittest.TestCase):
