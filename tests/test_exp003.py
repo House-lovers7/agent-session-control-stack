@@ -28,7 +28,20 @@ ALL_ARMS = [
     "003-p1-treated",
     "003-p2-treated",
     "003-p2-baseline",
+    "003-p1r-baseline",
+    "003-p1r-treated",
+    "003-p2r-treated",
+    "003-p2r-baseline",
 ]
+
+# Per pair: (tokens that MUST appear in the prompt task text,
+#            tokens that MUST NOT appear — the other pairs' tasks).
+PAIR_TASK_TOKENS = {
+    "1": (["RLS012", "materialized_view_in_api"], ["RLS014", "extension_in_public", "REVOKE"]),
+    "2": (["RLS014", "foreign_table_in_api"], ["RLS012", "extension_in_public", "REVOKE"]),
+    "1r": (["REVOKE", "RLS014", "foreign_table_in_api"], ["extension_in_public", "RLS012"]),
+    "2r": (["ALTER POLICY", "extension_in_public", "RLS019"], ["RLS014", "RLS012", "REVOKE"]),
+}
 
 COACHING_PHRASES = [
     "visible failure を発生させる",
@@ -94,15 +107,23 @@ class TestPromptGeneration(unittest.TestCase):
             self.assertTrue(prompt.strip(), f"{arm_name}/{phase} is empty")
 
     def test_task_summary_matches_pair(self):
-        for arm_name, _arm, phase, prompt in self.prompts():
-            if "p1" in arm_name:
-                self.assertIn("RLS012", prompt, f"{arm_name}/{phase}")
-                self.assertIn("materialized_view_in_api", prompt)
-                self.assertNotIn("RLS014", prompt)
+        for arm_name, arm, phase, prompt in self.prompts():
+            required, forbidden = PAIR_TASK_TOKENS[arm.pair]
+            for token in required:
+                self.assertIn(token, prompt, f"{arm_name}/{phase} missing {token!r}")
+            for token in forbidden:
+                self.assertNotIn(token, prompt, f"{arm_name}/{phase} contains {token!r}")
+
+    def test_checkpoint_flow_matches_arm_generation(self):
+        for arm_name, arm, phase, prompt in self.prompts():
+            if phase != "first":
+                continue
+            if arm.checkpoints == 2:
+                self.assertIn("checkpoint 1", prompt, f"{arm_name}/first")
+                self.assertIn("checkpoint 2", prompt, f"{arm_name}/first")
+                self.assertIn("Part A", prompt, f"{arm_name}/first")
             else:
-                self.assertIn("RLS014", prompt, f"{arm_name}/{phase}")
-                self.assertIn("foreign_table_in_api", prompt)
-                self.assertNotIn("RLS012", prompt)
+                self.assertNotIn("checkpoint", prompt, f"{arm_name}/first")
 
     def test_condition_section_not_leaked_into_task(self):
         for arm_name, _arm, phase, prompt in self.prompts():
@@ -127,6 +148,28 @@ class TestPromptGeneration(unittest.TestCase):
         for arm_name, _arm, phase, prompt in self.prompts():
             for phrase in COACHING_PHRASES:
                 self.assertNotIn(phrase, prompt, f"{arm_name}/{phase} contains {phrase!r}")
+
+
+class TestArmDefinitions(unittest.TestCase):
+    def test_arm_definitions_are_consistent(self):
+        self.assertEqual(sorted(exp003.ARMS), sorted(ALL_ARMS))
+        for name, arm in exp003.ARMS.items():
+            self.assertEqual(arm.name, name)
+            self.assertEqual(arm.branch, f"exp-{name}")
+            self.assertTrue((REPO_ROOT / arm.experiment_dir).is_dir(), arm.experiment_dir)
+            self.assertIn(arm.condition, ("baseline", "treated"))
+            self.assertIn(arm.checkpoints, (1, 2))
+            self.assertIn(arm.task_source, exp003.ARMS)
+            self.assertEqual(exp003.ARMS[arm.task_source].pair, arm.pair)
+
+    def test_pair_first_arm_map_is_consistent(self):
+        pairs = {arm.pair for arm in exp003.ARMS.values()}
+        self.assertEqual(set(exp003.PAIR_FIRST_ARM), pairs)
+        for pair, first_name in exp003.PAIR_FIRST_ARM.items():
+            first = exp003.ARMS[first_name]
+            self.assertEqual(first.pair, pair)
+            orders = [a.order for a in exp003.ARMS.values() if a.pair == pair]
+            self.assertEqual(first.order, min(orders))
 
 
 class TestBaselineSetupVerification(unittest.TestCase):

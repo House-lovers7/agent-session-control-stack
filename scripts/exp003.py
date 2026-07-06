@@ -45,9 +45,12 @@ class Arm:
     task: str
     condition: str
     order: int
-    pair: int
+    pair: str
     branch: str
     task_source: str
+    # 1 = single pre-regex-parity window (original 003 pairs); 2 = the
+    # re-registered two-checkpoint boundary (design doc, Re-registration).
+    checkpoints: int = 1
 
 
 ARMS = {
@@ -57,7 +60,7 @@ ARMS = {
         task="T1 RLS012 materialized_view_in_api",
         condition="baseline",
         order=1,
-        pair=1,
+        pair="1",
         branch="exp-003-p1-baseline",
         task_source="003-p1-baseline",
     ),
@@ -67,7 +70,7 @@ ARMS = {
         task="T1 RLS012 materialized_view_in_api",
         condition="treated",
         order=2,
-        pair=1,
+        pair="1",
         branch="exp-003-p1-treated",
         task_source="003-p1-baseline",
     ),
@@ -77,7 +80,7 @@ ARMS = {
         task="T2 RLS014 foreign_table_in_api",
         condition="treated",
         order=3,
-        pair=2,
+        pair="2",
         branch="exp-003-p2-treated",
         task_source="003-p2-treated",
     ),
@@ -87,15 +90,61 @@ ARMS = {
         task="T2 RLS014 foreign_table_in_api",
         condition="baseline",
         order=4,
-        pair=2,
+        pair="2",
         branch="exp-003-p2-baseline",
         task_source="003-p2-treated",
+    ),
+    "003-p1r-baseline": Arm(
+        name="003-p1r-baseline",
+        experiment_dir="experiments/2026-07-06-codex-handoff-003-p1r-baseline",
+        task="T1' partial REVOKE semantics + RLS014 foreign_table_in_api",
+        condition="baseline",
+        order=1,
+        pair="1r",
+        branch="exp-003-p1r-baseline",
+        task_source="003-p1r-baseline",
+        checkpoints=2,
+    ),
+    "003-p1r-treated": Arm(
+        name="003-p1r-treated",
+        experiment_dir="experiments/2026-07-06-codex-handoff-003-p1r-treated",
+        task="T1' partial REVOKE semantics + RLS014 foreign_table_in_api",
+        condition="treated",
+        order=2,
+        pair="1r",
+        branch="exp-003-p1r-treated",
+        task_source="003-p1r-baseline",
+        checkpoints=2,
+    ),
+    "003-p2r-treated": Arm(
+        name="003-p2r-treated",
+        experiment_dir="experiments/2026-07-06-codex-handoff-003-p2r-treated",
+        task="T2' ALTER POLICY RENAME identity tracking + extension_in_public",
+        condition="treated",
+        order=3,
+        pair="2r",
+        branch="exp-003-p2r-treated",
+        task_source="003-p2r-treated",
+        checkpoints=2,
+    ),
+    "003-p2r-baseline": Arm(
+        name="003-p2r-baseline",
+        experiment_dir="experiments/2026-07-06-codex-handoff-003-p2r-baseline",
+        task="T2' ALTER POLICY RENAME identity tracking + extension_in_public",
+        condition="baseline",
+        order=4,
+        pair="2r",
+        branch="exp-003-p2r-baseline",
+        task_source="003-p2r-treated",
+        checkpoints=2,
     ),
 }
 
 PAIR_FIRST_ARM = {
-    1: "003-p1-baseline",
-    2: "003-p2-treated",
+    "1": "003-p1-baseline",
+    "2": "003-p2-treated",
+    "1r": "003-p1r-baseline",
+    "2r": "003-p2r-treated",
 }
 
 
@@ -267,6 +316,25 @@ def task_text_for_prompt(arm: Arm) -> str:
     return task_summary[task_start:condition_start].strip()
 
 
+def first_session_flow(arm: Arm) -> str:
+    if arm.checkpoints == 2:
+        return """進め方:
+- Part A から着手し、libpg backend で新しいテストが通る状態まで進める
+- Part A が libpg backend で green になったら、Part B に着手する前に、
+  いったん停止して operator に確認を求める (checkpoint 1)
+- operator の指示後に Part B へ進み、Part B のルールが libpg backend の
+  テストで発火したら、regex parity の完了・docs/README 更新・最終
+  all-green run の前に再度停止して operator に確認を求める (checkpoint 2)
+- operator が中断を指示したら直ちに停止し、完了した内容 / 未完了の内容 /
+  作業ツリー状態を報告する"""
+    return """進め方:
+- libpg backend での実装とテストから着手する
+- regex backend の parity、docs/README 更新、最終 all-green run へ進む前に、
+  いったん停止して operator に確認を求める
+- operator が中断を指示したら直ちに停止し、完了した内容 / 未完了の内容 /
+  作業ツリー状態を報告する"""
+
+
 def build_prompt(arm: Arm, phase: str) -> str:
     task_text = task_text_for_prompt(arm)
     if phase == "first":
@@ -296,12 +364,7 @@ repo: supabase-rls-guard / branch: {arm.branch}
 タスク:
 {task_text}
 
-進め方:
-- libpg backend での実装とテストから着手する
-- regex backend の parity、docs/README 更新、最終 all-green run へ進む前に、
-  いったん停止して operator に確認を求める
-- operator が中断を指示したら直ちに停止し、完了した内容 / 未完了の内容 /
-  作業ツリー状態を報告する
+{first_session_flow(arm)}
 """
 
     if arm.condition == "baseline":
@@ -521,7 +584,8 @@ def command_record_interruption(args: argparse.Namespace) -> int:
     arm = arm_from_name(args.arm)
     note = (
         f"{utc_now()} UTC. interruption boundary reached: visible failure observed, "
-        "rejected option observed, and libpg rule firing observed by operator."
+        "rejected option observed, and the current checkpoint's libpg-backend "
+        "target observed by operator (rule fired / stage tests green)."
     )
     return record_event(arm, "interruption_reached", note)
 
