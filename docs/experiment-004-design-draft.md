@@ -154,15 +154,30 @@ seeds: (a) a CTAS table without RLS enabled is flagged by the
 RLS-enablement rules; (b) column-level rules neither fire nor crash on it;
 (c) both backends agree. Done definition and commit discipline as in T-A.
 
-**Slice 2 — one new rule from the official Splinter catalog.** The rule ID
-is fixed at pre-registration, after an External Specification Preflight
-against the official catalog. Selection criteria (fixed now): (1) the lint
-exists in the official Splinter catalog; (2) it is statically detectable
-from migration SQL alone (no live catalog needed); (3) comparable in size
-to T-A's Slice 2 (new detection + registry + tests + docs; no parser
-overhaul); (4) independent of Slice 1's CTAS work, so the partial-start
-state stays clean. Unverified candidates (named from memory, pending the
-preflight): `no_primary_key`, `unindexed_foreign_keys`, `duplicate_index`.
+**Slice 2 — Splinter 0004 `no_primary_key`** (candidate target-repo ID
+`RLS020`) — **SETTLED (2026-07-06)** after an External Specification
+Preflight against the official Splinter catalog. The lint flags tables that
+lack a primary-key constraint. It is adopted because it exists in the
+official catalog, is a schema-only lint, is statically detectable from
+migration SQL, can reuse the target repo's existing table/column model, and
+is closer in implementation scope to T-A's Slice 2 than the rejected
+alternatives `unindexed_foreign_keys` and `duplicate_index`.
+
+Preflight sources checked on 2026-07-06: Supabase's official database-linter
+catalog (`https://supabase.com/docs/guides/database/database-linter`), the
+official Splinter pages for `0004_no_primary_key`,
+`0001_unindexed_foreign_keys`, and `0009_duplicate_index`, and the Splinter
+README note that the catalog implementation lives in `splinter.sql` and the
+docs site. The preflight confirmed that all three candidates exist in the
+official catalog and are not statistics-based lints. The final choice is
+`0004_no_primary_key`.
+
+Checkpoint constraint for T-B Slice 2: the failing tests at the checkpoint
+must use ordinary `CREATE TABLE` statements without a primary key. They must
+not exercise a CTAS-created table. Whether `no_primary_key` should fire for
+a CTAS-created table is deliberately left as a resumed-session design
+decision, so Slice 1's CTAS modeling and Slice 2's new lint remain separable
+at the checkpoint.
 
 ## Fixed checkpoint — definition
 
@@ -854,9 +869,14 @@ experiment is follow-up work with its own design and number.
 
 1. **Task selection — SETTLED (2026-07-06): T-A and T-B.** T1 = T-A
    (rename tracking + `extension_in_public`), T2 = T-B (`CREATE TABLE AS`
-   modeling + one Splinter-catalog rule, ID fixed at pre-registration
-   after the official-catalog preflight). Dynamic-SQL tasks rejected. See
-   "Tasks and target repo". Numbering kept for traceability.
+   modeling + Splinter 0004 `no_primary_key`, target-repo ID candidate
+   `RLS020`). The official-catalog preflight selected `no_primary_key` over
+   `unindexed_foreign_keys` and `duplicate_index` because it is schema-only,
+   statically detectable from migration SQL, and closest in scope to T-A's
+   Slice 2. T-B Slice 2 checkpoint failing tests must use ordinary
+   `CREATE TABLE` without a primary key; CTAS interaction is left as a
+   resumed-session design decision. Dynamic-SQL tasks rejected. See "Tasks
+   and target repo". Numbering kept for traceability.
 2. **Target repo — SETTLED (2026-07-06): supabase-rls-guard.** Operator
    familiarity is recorded as a residual; worker familiarity resets with
    the runtime change. Base commit candidate `563ad47`. Numbering kept for
