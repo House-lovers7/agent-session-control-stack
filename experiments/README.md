@@ -28,6 +28,12 @@ criteria", not "the stack works generally".
 
 ## Running a real before/after pair (the next experiment)
 
+The next experiment is pre-registered in
+[docs/experiment-003-design.md](../docs/experiment-003-design.md): two ABBA
+counterbalanced pairs, event-derived resume timing, a task-size rule so the
+recovery-quality metrics can bite, and `recovery_quality` (0–4) as a
+comparison metric outside the PASS/FAIL gate.
+
 One before/after comparison = **two experiment directories** on the same kind
 of real task (no synthetic tasks), one per condition:
 
@@ -48,10 +54,14 @@ python3 scripts/ascs.py init --name codex-handoff-002-treated  --runtime codex -
    end + resume, or model switch) so `resume_time_seconds` measures something.
 3. **Record events as they happen** (`record --event checkpoint|recovery-start|
    state-check --note ...`), not retroactively at the end. In particular,
-   record a `resume-start` event **in both arms** at the moment the first
-   resume prompt is sent — `resume_time_seconds` starts there, never at the
-   interruption event or at a restart decision (this is the clock-start
-   asymmetry that forced the Experiment 002 correction).
+   record `resume-start` **in both arms** at the moment the first resume
+   prompt is sent, and `first-progress-edit` at the first forward-progress
+   edit: `finish` derives `resume_time_seconds` from these two events and
+   fails without them (hand-computed values are no longer accepted; a
+   conflicting `--resume-time` is rejected). The clock never starts at the
+   interruption event or at a restart decision — that clock-start asymmetry
+   is what forced the Experiment 002 correction. Write any clock time inside
+   a note in UTC; `record` warns otherwise.
 4. **Finish each run** with the pre-registered judgment rules applied to the
    session log, then compare the two directories side by side.
 5. **Interpretation limit.** n=1 pair is consistency evidence, not causality

@@ -37,6 +37,15 @@ METRIC_KEYS = [
     "human_corrections",
 ]
 
+# Reported for comparison, never gated on. Optional so that experiments
+# recorded before it existed (001, 002) still score.
+OPTIONAL_METRIC_KEYS = [
+    "recovery_quality",
+]
+
+RESUME_START_EVENT = "resume-start"
+FIRST_PROGRESS_EVENT = "first-progress-edit"
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -131,9 +140,13 @@ def markdown_report(data: dict[str, Any], existing_report: str | None = None) ->
                 f"| repeated_failures | {metrics.get('repeated_failures', '')} |",
                 f"| rejected_option_relapses | {metrics.get('rejected_option_relapses', '')} |",
                 f"| human_corrections | {metrics.get('human_corrections', '')} |",
-                "",
             ]
         )
+        if "recovery_quality" in metrics:
+            lines.append(
+                f"| recovery_quality (0-4, reported only) | {metrics['recovery_quality']} |"
+            )
+        lines.append("")
     else:
         lines.append("<!-- Filled by `scripts/ascs.py finish`. -->")
         lines.append("")
@@ -256,11 +269,32 @@ def init_experiment(args: argparse.Namespace) -> int:
     return 0
 
 
+def looks_like_non_utc_time(note: str) -> bool:
+    """Heuristic: a clock time in a note that is not visibly UTC.
+
+    Event timestamps are always UTC; clock times written into notes must be
+    UTC too (Experiment 002 was corrected partly because notes mixed JST and
+    UTC). Flag hh:mm:ss occurrences unless the note marks them as UTC/Z.
+    """
+    import re
+
+    if not re.search(r"\b\d{1,2}:\d{2}:\d{2}\b", note):
+        return False
+    return not re.search(r"\b\d{1,2}:\d{2}:\d{2}(Z|\+00:00)|UTC", note)
+
+
 def record_event(args: argparse.Namespace) -> int:
     experiment_dir = Path(args.experiment)
     if not experiment_dir.exists():
         print(f"FAIL {experiment_dir} does not exist", file=sys.stderr)
         return 1
+
+    if looks_like_non_utc_time(args.note):
+        print(
+            "WARN note contains a clock time without a UTC marker; "
+            "write note times in UTC (append Z or +00:00, or say UTC) — "
+            "mixed timezones forced the Experiment 002 correction"
+        )
 
     event = {
         "timestamp": now_iso(),
@@ -310,6 +344,38 @@ def calculate_score(metrics: dict[str, int], scored_at: str | None = None) -> di
     return score
 
 
+def derive_resume_time(events_path: Path) -> tuple[int | None, str]:
+    """Derive resume_time_seconds from recorded events.
+
+    Uses the LAST `resume-start` event (an aborted resume attempt is
+    superseded by recording a fresh `resume-start`) and the first
+    `first-progress-edit` event after it. Returns (seconds, detail) or
+    (None, reason).
+    """
+    if not events_path.exists():
+        return None, f"{events_path} does not exist"
+    resume_start = None
+    first_progress = None
+    for line in events_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        if event.get("event") == RESUME_START_EVENT:
+            resume_start = event["timestamp"]
+            first_progress = None
+        elif event.get("event") == FIRST_PROGRESS_EVENT and resume_start and not first_progress:
+            first_progress = event["timestamp"]
+    if resume_start is None:
+        return None, f"no `{RESUME_START_EVENT}` event recorded"
+    if first_progress is None:
+        return None, f"no `{FIRST_PROGRESS_EVENT}` event recorded after the last `{RESUME_START_EVENT}`"
+    delta = datetime.fromisoformat(first_progress) - datetime.fromisoformat(resume_start)
+    seconds = int(delta.total_seconds())
+    if seconds < 0:
+        return None, f"`{FIRST_PROGRESS_EVENT}` precedes `{RESUME_START_EVENT}`"
+    return seconds, f"{resume_start} -> {first_progress}"
+
+
 def finish_experiment(args: argparse.Namespace) -> int:
     experiment_dir = Path(args.experiment)
     experiment_json = experiment_dir / "experiment.json"
@@ -317,14 +383,44 @@ def finish_experiment(args: argparse.Namespace) -> int:
         print(f"FAIL {experiment_json} does not exist", file=sys.stderr)
         return 1
 
+    derived, detail = derive_resume_time(experiment_dir / "events.jsonl")
+    if derived is None and args.resume_time is None:
+        print(
+            f"FAIL cannot determine resume_time_seconds: {detail}. "
+            f"Record `{RESUME_START_EVENT}` when the first resume prompt is sent and "
+            f"`{FIRST_PROGRESS_EVENT}` at the first forward-progress edit "
+            "(the clock never starts at an interruption event or a restart decision)",
+            file=sys.stderr,
+        )
+        return 1
+    if derived is not None and args.resume_time is not None and abs(derived - args.resume_time) > 2:
+        print(
+            f"FAIL --resume-time {args.resume_time} disagrees with the event-derived value "
+            f"{derived} ({detail}); the event-derived value is authoritative — drop --resume-time "
+            "or fix the recorded events",
+            file=sys.stderr,
+        )
+        return 1
+    resume_time = derived if derived is not None else args.resume_time
+    if derived is not None:
+        print(f"PASS resume_time_seconds={derived} derived from events ({detail})")
+    else:
+        print(
+            f"WARN resume_time_seconds={resume_time} taken from --resume-time without "
+            f"`{RESUME_START_EVENT}`/`{FIRST_PROGRESS_EVENT}` events; event-derived timing is required "
+            "for before/after pairs (experiments/README.md)"
+        )
+
     data = read_json(experiment_json)
     metrics = {
-        "resume_time_seconds": args.resume_time,
+        "resume_time_seconds": resume_time,
         "missed_state_files": args.missed_state_files,
         "repeated_failures": args.repeated_failures,
         "rejected_option_relapses": args.rejected_option_relapses,
         "human_corrections": args.human_corrections,
     }
+    if args.recovery_quality is not None:
+        metrics["recovery_quality"] = args.recovery_quality
     data["metrics"] = metrics
     data["finished_at"] = now_iso()
     data["score"] = calculate_score(metrics)
@@ -367,6 +463,9 @@ def score_experiment(args: argparse.Namespace) -> int:
     print(f"| repeated_failures | {typed_metrics['repeated_failures']} | must be 0 |")
     print(f"| rejected_option_relapses | {typed_metrics['rejected_option_relapses']} | must be 0 |")
     print(f"| human_corrections | {typed_metrics['human_corrections']} | must be <= 1 |")
+    print(f"| resume_time_seconds | {typed_metrics['resume_time_seconds']} | reported only |")
+    if "recovery_quality" in metrics:
+        print(f"| recovery_quality | {int(metrics['recovery_quality'])} | reported only (0-4) |")
     print("")
     print(f"Score: **{score['status']}**")
     if score["failed_criteria"]:
@@ -398,11 +497,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     finish_parser = subparsers.add_parser("finish", help="save final metrics and update report.md")
     finish_parser.add_argument("--experiment", required=True)
-    finish_parser.add_argument("--resume-time", required=True, type=int, dest="resume_time")
+    finish_parser.add_argument(
+        "--resume-time",
+        type=int,
+        default=None,
+        dest="resume_time",
+        help="cross-check only; resume_time_seconds is derived from "
+        "resume-start/first-progress-edit events when they exist",
+    )
     finish_parser.add_argument("--missed-state-files", required=True, type=int)
     finish_parser.add_argument("--repeated-failures", required=True, type=int)
     finish_parser.add_argument("--rejected-option-relapses", required=True, type=int)
     finish_parser.add_argument("--human-corrections", required=True, type=int)
+    finish_parser.add_argument(
+        "--recovery-quality",
+        type=int,
+        choices=(0, 1, 2, 3, 4),
+        default=None,
+        help="R1-R4 rubric total (reported for comparison, never gated)",
+    )
     finish_parser.set_defaults(func=finish_experiment)
 
     score_parser = subparsers.add_parser("score", help="score an experiment")
