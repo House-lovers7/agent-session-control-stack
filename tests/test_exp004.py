@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import io
+import json
 import subprocess
 import sys
 import unittest
@@ -181,29 +182,153 @@ class TestCheckpointSignature(unittest.TestCase):
 
 
 class TestRecordAndFinishCommands(unittest.TestCase):
+    def make_finish_fixture(self, tmp: str):
+        experiment = Path(tmp) / "experiment"
+        experiment.mkdir()
+        data = {
+            "created_at": "2026-07-06T00:00:00+00:00",
+            "name": "004-p1-baseline",
+            "runtime": "claude-code",
+            "target_repo": "supabase-rls-guard",
+            "events_file": "events.jsonl",
+            "report_file": "report.md",
+            "gate_profile": "experiment-004",
+            "metrics": {},
+            "score": {},
+        }
+        (experiment / "experiment.json").write_text(json.dumps(data) + "\n", encoding="utf-8")
+        events = (
+            json.dumps(
+                {
+                    "timestamp": "2026-07-06T00:00:00+00:00",
+                    "event": "resume-start",
+                    "note": "start",
+                },
+                sort_keys=True,
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "timestamp": "2026-07-06T00:02:00+00:00",
+                    "event": "first-progress-edit",
+                    "note": "edit",
+                },
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        report = """# Experiment 004 Preregistration - 004-p1-baseline
+
+## Task Summary
+
+Frozen preregistration task summary.
+
+## Frozen First Prompt
+
+<!-- FROZEN_FIRST_PROMPT_BEGIN -->
+```text
+first prompt must survive
+```
+<!-- FROZEN_FIRST_PROMPT_END -->
+
+## Frozen Resume Prompt
+
+<!-- FROZEN_RESUME_PROMPT_BEGIN -->
+```text
+resume prompt must survive
+```
+<!-- FROZEN_RESUME_PROMPT_END -->
+
+## Metrics And Gate References
+
+- Layer 2 pair comparison remains frozen.
+- resume_time_seconds is reported only.
+
+## Events
+
+- Existing evidence note must survive.
+
+## Result
+
+<!-- Filled after the arm finishes. -->
+"""
+        (experiment / "events.jsonl").write_text(events, encoding="utf-8")
+        (experiment / "report.md").write_text(report, encoding="utf-8")
+        return experiment, report, events
+
+    def finish_args(self):
+        return argparse.Namespace(
+            arm="004-p1-baseline",
+            missed_checkpoint_items=1,
+            human_corrections=0,
+            recovery_quality=4,
+            missed_state_files="n/a",
+        )
+
     def test_record_resume_start_requires_pair_audit(self):
         with mock.patch.object(exp004, "has_event", side_effect=lambda _arm, event: event == "interruption_reached"):
             with quiet():
                 status = exp004.command_record_resume_start(argparse.Namespace(arm="004-p1-baseline"))
         self.assertEqual(status, 1)
 
-    def test_finish_arm_uses_004_gate_profile_and_does_not_score(self):
-        args = argparse.Namespace(
-            arm="004-p2-treated",
-            missed_checkpoint_items=1,
-            human_corrections=0,
-            recovery_quality=4,
-            missed_state_files="0",
-        )
-        with mock.patch.object(exp004, "run_ascs", return_value=0) as run:
-            status = exp004.command_finish_arm(args)
+    def test_finish_arm_updates_metrics_without_rewriting_report(self):
+        with TemporaryDirectory() as tmp:
+            experiment, original_report, _original_events = self.make_finish_fixture(tmp)
+            with mock.patch.object(exp004, "experiment_path", return_value=experiment), \
+                    mock.patch.object(exp004, "events_path", return_value=experiment / "events.jsonl"):
+                with quiet():
+                    status = exp004.command_finish_arm(self.finish_args())
+            self.assertEqual(status, 0)
+            data = json.loads((experiment / "experiment.json").read_text(encoding="utf-8"))
+            self.assertEqual(data["gate_profile"], "experiment-004")
+            self.assertEqual(data["metrics"]["resume_time_seconds"], 120)
+            self.assertEqual(data["metrics"]["missed_checkpoint_items"], 1)
+            self.assertEqual(data["metrics"]["missed_state_files"], "n/a")
+            self.assertEqual(data["score"]["status"], "REPORTED_ONLY")
+            self.assertEqual((experiment / "report.md").read_text(encoding="utf-8"), original_report)
+
+    def test_finish_arm_preserves_frozen_prompt_gate_and_evidence_sections(self):
+        with TemporaryDirectory() as tmp:
+            experiment, original_report, _original_events = self.make_finish_fixture(tmp)
+            with mock.patch.object(exp004, "experiment_path", return_value=experiment), \
+                    mock.patch.object(exp004, "events_path", return_value=experiment / "events.jsonl"):
+                with quiet():
+                    status = exp004.command_finish_arm(self.finish_args())
+            self.assertEqual(status, 0)
+            report = (experiment / "report.md").read_text(encoding="utf-8")
+            for required in (
+                "<!-- FROZEN_FIRST_PROMPT_BEGIN -->",
+                "first prompt must survive",
+                "<!-- FROZEN_RESUME_PROMPT_BEGIN -->",
+                "resume prompt must survive",
+                "## Metrics And Gate References",
+                "Layer 2 pair comparison remains frozen.",
+                "## Events",
+                "Existing evidence note must survive.",
+            ):
+                self.assertIn(required, report)
+            self.assertEqual(report, original_report)
+
+    def test_finish_arm_leaves_events_file_unchanged(self):
+        with TemporaryDirectory() as tmp:
+            experiment, _original_report, original_events = self.make_finish_fixture(tmp)
+            with mock.patch.object(exp004, "experiment_path", return_value=experiment), \
+                    mock.patch.object(exp004, "events_path", return_value=experiment / "events.jsonl"):
+                with quiet():
+                    status = exp004.command_finish_arm(self.finish_args())
+            self.assertEqual(status, 0)
+            self.assertEqual((experiment / "events.jsonl").read_text(encoding="utf-8"), original_events)
+
+    def test_finish_arm_does_not_call_generic_finish_or_score(self):
+        with TemporaryDirectory() as tmp:
+            experiment, _original_report, _original_events = self.make_finish_fixture(tmp)
+            with mock.patch.object(exp004, "experiment_path", return_value=experiment), \
+                    mock.patch.object(exp004, "events_path", return_value=experiment / "events.jsonl"), \
+                    mock.patch.object(exp004, "run_ascs", return_value=0) as run:
+                with quiet():
+                    status = exp004.command_finish_arm(self.finish_args())
         self.assertEqual(status, 0)
-        run.assert_called_once()
-        call = run.call_args[0][0]
-        self.assertEqual(call[0], "finish")
-        self.assertIn("--gate-profile", call)
-        self.assertIn("experiment-004", call)
-        self.assertNotIn("score", call)
+        run.assert_not_called()
 
 
 if __name__ == "__main__":

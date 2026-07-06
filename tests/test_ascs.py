@@ -87,6 +87,25 @@ class TestExperiment004Profile(unittest.TestCase):
             self.assertEqual(data["metrics"]["missed_state_files"], "n/a")
             self.assertEqual(data["score"]["status"], "REPORTED_ONLY")
 
+    def test_generic_finish_still_regenerates_report(self):
+        with TemporaryDirectory() as tmp:
+            experiment = make_experiment(tmp, gate_profile="experiment-004")
+            report = experiment / "report.md"
+            report.write_text(
+                "# Experiment 004 Preregistration\n\n"
+                "## Task Summary\n\nunit\n\n"
+                "## Events\n\n"
+                "## Frozen First Prompt\n\nmust be removed by generic finish\n\n",
+                encoding="utf-8",
+            )
+            with quiet():
+                status = ascs.finish_experiment(self.finish_args(experiment))
+            self.assertEqual(status, 0)
+            updated = report.read_text(encoding="utf-8")
+            self.assertIn("## Task Summary", updated)
+            self.assertNotIn("## Frozen First Prompt", updated)
+            self.assertNotIn("must be removed by generic finish", updated)
+
     def test_default_profile_rejects_na_missed_state_files(self):
         with TemporaryDirectory() as tmp:
             experiment = make_experiment(tmp)

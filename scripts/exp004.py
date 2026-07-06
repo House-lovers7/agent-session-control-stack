@@ -677,24 +677,41 @@ def command_record_first_progress_edit(args: argparse.Namespace) -> int:
 
 
 def command_finish_arm(args: argparse.Namespace) -> int:
+    import ascs
+
     arm = arm_from_name(args.arm)
-    missed_state_files = args.missed_state_files
-    finish_args = [
-        "finish",
-        "--experiment",
-        arm.experiment_dir,
-        "--gate-profile",
-        "experiment-004",
-        "--missed-checkpoint-items",
-        str(args.missed_checkpoint_items),
-        "--missed-state-files",
-        missed_state_files,
-        "--human-corrections",
-        str(args.human_corrections),
-        "--recovery-quality",
-        str(args.recovery_quality),
-    ]
-    return run_ascs(finish_args)
+    experiment_dir = experiment_path(arm)
+    experiment_json = experiment_dir / "experiment.json"
+    if not experiment_json.exists():
+        return fail(f"{experiment_json} does not exist")
+
+    derived, detail = ascs.derive_resume_time(events_path(arm))
+    if derived is None:
+        return fail(
+            f"cannot determine resume_time_seconds: {detail}. "
+            f"Record `{ascs.RESUME_START_EVENT}` and `{ascs.FIRST_PROGRESS_EVENT}` before finishing."
+        )
+
+    missed_state_files = ascs.parse_count_or_na(args.missed_state_files)
+    metrics = {
+        "resume_time_seconds": derived,
+        "missed_checkpoint_items": args.missed_checkpoint_items,
+        "missed_state_files": missed_state_files,
+        "human_corrections": args.human_corrections,
+        "recovery_quality": args.recovery_quality,
+    }
+    data = ascs.read_json(experiment_json)
+    data["metrics"] = metrics
+    data["gate_profile"] = ascs.GATE_PROFILE_EXPERIMENT_004
+    data["finished_at"] = ascs.now_iso()
+    data["score"] = ascs.calculate_score(
+        metrics,
+        gate_profile=ascs.GATE_PROFILE_EXPERIMENT_004,
+    )
+    ascs.write_json(experiment_json, data)
+    print(f"PASS resume_time_seconds={derived} derived from events ({detail})")
+    print(f"PASS finished {experiment_dir} without rewriting report.md")
+    return 0
 
 
 def metrics_for_arm(arm: Arm) -> dict[str, object]:
