@@ -13,6 +13,7 @@
 - Read `.agent-session/state/recovery-notes.md` if it exists. At resume time, update it with what was verified from state files and any discrepancy found.
 
 ### During long work
+- Update `.agent-session/state/current-plan.md` when the plan, next steps, or the active task slice changes.
 - Update `.agent-session/state/decision-log.md` when choosing or rejecting an approach.
 - Update `.agent-session/state/failed-attempts.md` after failed commands, rejected plans, or repeated errors. Include the cause hypothesis, not just the failure.
 - Refresh `.agent-session/state/checkpoint.md` at natural boundaries: after completing a phase, before a risky or wide-ranging change, and roughly every 10 substantial steps such as file edits, test runs, or tool calls.

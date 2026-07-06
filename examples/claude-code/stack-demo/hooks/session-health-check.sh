@@ -10,7 +10,7 @@ if [ -z "${SESSION_HEALTH_CHECK_COMMAND:-}" ]; then
   {
     printf '%s\n' 'session-health adapter disabled: SESSION_HEALTH_CHECK_COMMAND is empty or unset.'
     printf '%s\n' 'Install the upstream health detection tool yourself, then set SESSION_HEALTH_CHECK_COMMAND to the command of your choice.'
-    printf '%s\n' 'Upstream links are listed in ../../../../ATTRIBUTION.md.'
+    printf '%s\n' 'Upstream links: see ATTRIBUTION.md in the agent-session-control-stack repository (https://github.com/House-lovers7/agent-session-control-stack).'
   } >&2
   exit 1
 fi

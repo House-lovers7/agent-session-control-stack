@@ -14,6 +14,8 @@
 - Read `.agent-session/state/failed-attempts.md` before retrying an approach.
 
 ### During long work
+- Update `state/current-plan.md` when the plan, next steps, or the active
+  task slice changes.
 - Update `state/decision-log.md` when choosing or rejecting an approach.
 - Update `state/failed-attempts.md` after failed commands, rejected plans,
   or repeated errors — include the cause hypothesis, not just the failure.
