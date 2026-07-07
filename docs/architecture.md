@@ -121,14 +121,14 @@ composition effect.
 ### 3.1 Compression — pxpipe
 
 - `127.0.0.1:47821` のローカルプロキシ。`ANTHROPIC_BASE_URL` を差し替えて接続
-- 画像化する: 大きな tool_result（目安 6,000 文字超）/ 折りたたみ済みの古い履歴 / static system prompt + tool docs
+- 画像化する: 大きな tool_result / 折りたたみ済みの古い履歴 / static system prompt + tool docs。tool_result の per-block 閾値は上流 README では「~6k chars」だがコード既定は `minToolResultChars=2000`（TRANSFORM_INFO.md）。2026-07-07 の実測でも 2,000 字ゲート（`below_min_chars`）を確認
 - 触らない: ユーザーメッセージ / 直近ターン / モデル出力 / allowlist（`PXPIPE_MODELS`、既定 `claude-fable-5,gpt-5.6`）外モデルへのリクエスト
 - **lossy であることが本質的制約**。詳細は §6 と risk-register
 
 ### 3.2 Health Detection — session-health
 
 - hook は **UserPromptSubmit 1 種のみ**。hot 時に約 60 トークンの additionalContext を 20 リクエストごと最大 1 回注入し、「/compact か新セッションの提案」「探索・定型作業の subagent 委譲」をモデル自身に促す閉ループ
-- 判定: `hot = reqs≥80 or (reqs≥20 かつ cacheRead/output≥150)`、`warn = reqs≥50 or (reqs≥10 かつ ≥100)`。すべて env（`SESSION_HEALTH_*` 7 種）で調整可能
+- 判定: `hot = reqs≥80 or (reqs≥20 かつ cacheRead/output≥150)`、`warn = reqs≥50 or (reqs≥10 かつ ≥100)`。閾値は env（`SESSION_HEALTH_*` 7 種）で調整可能。ただし ratio 判定の最小リクエスト数（hot の 20 / warn の 10）はハードコードで env 対象外
 - compact 認識は PostCompact hook ではなく、transcript の `compact_boundary` レコード読取りで live segment（最後の compact 以降）をリセットする
 - 実測（作者リポジトリの検証ログ）: /compact でセッション内 live context 中央値 66% 削減（n=29）、正規化 cacheRead/output 比 233x→83x（4 日系列）。**因果ではなく整合性の証拠**と作者自身が明記
 
