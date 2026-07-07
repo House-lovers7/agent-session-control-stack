@@ -1,8 +1,106 @@
 # Agent Session Control Stack
 
-A reference architecture for long-running AI coding agent sessions.
+A reference architecture and lightweight tooling layer for controlling long-running AI coding agent sessions.
+
+ASCS helps you compose:
+
+- **Compression** — reduce bulky context safely
+- **Health Detection** — detect when a session is getting hot
+- **Checkpointing** — preserve plans, decisions, failed attempts, and worker topology
+- **Recovery** — resume safely after compaction, interruption, or a fresh-session restart
+
+Core rule:
+
+> Summary is hypothesis. Source and state files are truth.
 
 日本語版: [README.ja.md](README.ja.md)
+
+## What you can use today
+
+ASCS is not only a design document. You can use it today in four practical ways.
+
+### 1. Diagnose your Claude Code stack
+
+Install the read-only ASCS doctor:
+
+```bash
+claude plugin marketplace add House-lovers7/agent-session-control-stack
+claude plugin install ascs@ascs
+```
+
+Then run this inside Claude Code:
+
+```text
+/ascs:doctor
+```
+
+It reports which layers are active:
+
+- Compression: `pxpipe`
+- Health Detection: `claude-code-session-health`
+- Checkpoint / Recovery: `compact-plus`
+- Single compact decider rule
+
+The doctor is read-only. It does not install hooks, start proxies, call APIs, or modify configuration.
+
+### 2. Run the Claude Code reference stack
+
+```bash
+claude plugin marketplace add House-lovers7/agent-session-control-stack
+claude plugin install session-health@ascs
+claude plugin install compact-plus@ascs
+claude plugin install ascs@ascs
+```
+
+This gives you the reference Claude Code composition:
+
+- `session-health` decides when the session is getting hot.
+- `compact-plus` preserves and restores state around compaction.
+- `ascs` checks whether the stack is composed safely.
+
+`pxpipe` is optional and separate because it is a request-path proxy:
+
+```bash
+npx -y pxpipe-proxy
+alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
+```
+
+Read the safety notes before enabling `pxpipe`. It is lossy by design and should not be used for byte-exact values such as commit SHAs, IDs, secrets, exact paths, migration names, or deploy targets.
+
+### 3. Use the Codex handoff protocol
+
+Codex does not have Claude Code-style compaction hooks, so ASCS uses a protocol instead:
+
+- copy or adapt `examples/codex/AGENTS.md`
+- create a `.agent-session/` directory
+- keep handoff, plan, decisions, failed attempts, and recovery notes on disk
+- make the next session read those files before continuing work
+
+Start here:
+
+```text
+examples/codex/AGENTS.md
+templates/state-file.md
+```
+
+### 4. Generate a conservative claim-boundary report
+
+ASCS also includes a lightweight measurement helper:
+
+```bash
+python3 scripts/ascs.py doctor
+python3 scripts/ascs.py measure --experiment 004
+```
+
+The measurement path is intentionally conservative. It reports:
+
+- observed facts
+- allowed claims
+- disallowed claims
+- blockers
+- next required evidence
+
+It does not claim productivity gains, model superiority, speed improvements, or a validated full-stack composition effect.
 
 ## Problem
 
@@ -24,7 +122,9 @@ Do not treat this as one problem. Separate it into four layers:
 3. **Checkpointing** — preserve plan, decisions, failed attempts, and worker topology before context is lost
 4. **Recovery** — resume safely: *summary is hypothesis, source is truth*
 
-The layer contracts are independent — each can be adopted or removed on its own. (One binding-level caveat: on Claude Code, Checkpoint and Recovery both ship in compact-plus, so they are adopted and removed as a pair.)
+The layer contracts are independent — each can be adopted or removed on its own.
+
+One Claude Code binding caveat: Checkpoint and Recovery both ship through `compact-plus`, so they are adopted and removed as a pair.
 
 ## Architecture at a glance
 
@@ -65,7 +165,7 @@ This repository does **not** replace them and bundles none of their code. It doc
 
 The one rule that keeps the composition from conflicting: both session-health and compact-plus can tell the model to compact, on different criteria. This stack designates a **single decider** — session-health — and disables the compact-plus reminder *by construction*: the reminder only fires if an external statusline writes a warn-marker file, so not installing that producer turns it off while compact-plus's state capture and recovery keep working untouched.
 
-### Install (marketplace)
+### Detailed setup」
 
 ```bash
 claude plugin marketplace add House-lovers7/agent-session-control-stack
@@ -140,6 +240,8 @@ ASCS MEASURE RESULT
   - checkpoint_recovery (compact-plus (u-ichi)): no evidence
 - Composition evidence: no composition evidence
 ```
+
+
 
 ## Evidence status
 
