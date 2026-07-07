@@ -1,0 +1,49 @@
+{
+  "name": "ascs",
+  "description": "Agent Session Control Stack — assemble the reference stack in two commands. Upstream plugins install directly from their original authors' repositories: nothing here is bundled, forked, or rebranded. Credits and reasoning: ATTRIBUTION.md in this repository.",
+  "owner": {
+    "name": "Taisuke Goto",
+    "url": "https://github.com/House-lovers7"
+  },
+  "metadata": {
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "session-health",
+      "source": {
+        "source": "github",
+        "repo": "House-lovers7/claude-code-session-health"
+      },
+      "description": "Health Detection layer — closed-loop hot-session detection that lets the model itself propose /compact, a fresh session, or subagent delegation. The stack's single compact decider. By House-lovers7 (Taisuke Goto); installs from the original repository.",
+      "author": {
+        "name": "Taisuke Goto (House-lovers7)"
+      },
+      "homepage": "https://github.com/House-lovers7/claude-code-session-health",
+      "license": "MIT"
+    },
+    {
+      "name": "compact-plus",
+      "source": {
+        "source": "github",
+        "repo": "u-ichi/compact-plus"
+      },
+      "description": "Checkpoint + Recovery layers — transcript backup, 10-section state capture before compaction, and recovery guidance injection after it. By u-ichi (Yuichi Uemura); installs unmodified from the author's original repository — all credit upstream.",
+      "author": {
+        "name": "u-ichi (Yuichi Uemura)"
+      },
+      "homepage": "https://github.com/u-ichi/compact-plus",
+      "license": "MIT"
+    },
+    {
+      "name": "ascs",
+      "source": "./plugins/ascs",
+      "description": "Read-only stack doctor (/ascs:doctor): reports which ASCS layers are active in this environment and checks the single-compact-decider rule. Registers no injecting hooks, writes nothing, calls no API.",
+      "author": {
+        "name": "Taisuke Goto (House-lovers7)"
+      },
+      "homepage": "https://github.com/House-lovers7/agent-session-control-stack",
+      "license": "MIT"
+    }
+  ]
+}

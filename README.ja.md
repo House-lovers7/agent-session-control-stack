@@ -65,6 +65,22 @@ Architecture と claim-boundary の導線:
 
 合成を衝突させない 1 つのルール: session-health と compact-plus は、それぞれ異なる基準でモデルに compact を促せます。本 stack は **session-health を唯一の判定者**と定め、compact-plus の reminder を**設定ではなく構成で**無効化します。reminder は外部 statusline が warn marker ファイルを書いたときだけ発火するため、marker 生成器を導入しなければ一度も発火せず、state 保存・復旧注入は無傷で動き続けます。
 
+### インストール（marketplace）
+
+```bash
+claude plugin marketplace add House-lovers7/agent-session-control-stack
+claude plugin install session-health@ascs
+claude plugin install compact-plus@ascs
+claude plugin install ascs@ascs        # 任意: /ascs:doctor（read-only の stack 診断）
+```
+
+上流プラグインは**参照のみ**で列挙しています。インストールは各作者の原本リポジトリ（[House-lovers7/claude-code-session-health](https://github.com/House-lovers7/claude-code-session-health)、[u-ichi/compact-plus](https://github.com/u-ichi/compact-plus)）を無改変で取得します — 同梱・fork・改名は一切しません（[ATTRIBUTION.md](ATTRIBUTION.md) 参照）。pxpipe はリクエスト経路の proxy でありプラグインにはできないため、別途オプトインです（先に [Safety](#safety) を読むこと）:
+
+```bash
+npx -y pxpipe-proxy                    # 127.0.0.1:47821 で proxy 起動
+alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
+```
+
 - セットアップ・hook 責務・env 規約: [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md)
 - 設定スニペット: [examples/claude-code/settings.example.json](examples/claude-code/settings.example.json)
 - エンドツーエンド統合ウォークスルーとデモ例: [docs/claude-code-reference-integration.md](docs/claude-code-reference-integration.md) · [examples/claude-code/stack-demo/](examples/claude-code/stack-demo/)

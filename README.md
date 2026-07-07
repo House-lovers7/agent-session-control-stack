@@ -65,6 +65,22 @@ This repository does **not** replace them and bundles none of their code. It doc
 
 The one rule that keeps the composition from conflicting: both session-health and compact-plus can tell the model to compact, on different criteria. This stack designates a **single decider** — session-health — and disables the compact-plus reminder *by construction*: the reminder only fires if an external statusline writes a warn-marker file, so not installing that producer turns it off while compact-plus's state capture and recovery keep working untouched.
 
+### Install (marketplace)
+
+```bash
+claude plugin marketplace add House-lovers7/agent-session-control-stack
+claude plugin install session-health@ascs
+claude plugin install compact-plus@ascs
+claude plugin install ascs@ascs        # optional: /ascs:doctor, read-only stack diagnosis
+```
+
+The upstream plugins are listed **by reference**: installing them pulls the authors' original repositories ([House-lovers7/claude-code-session-health](https://github.com/House-lovers7/claude-code-session-health), [u-ichi/compact-plus](https://github.com/u-ichi/compact-plus)) unmodified — nothing is vendored or rebranded (see [ATTRIBUTION.md](ATTRIBUTION.md)). pxpipe is a request-path proxy, not a plugin; it stays a separate opt-in (read [Safety](#safety) first):
+
+```bash
+npx -y pxpipe-proxy                    # proxy on 127.0.0.1:47821
+alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
+```
+
 - Setup, hook ownership, env conventions: [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md)
 - Config snippet: [examples/claude-code/settings.example.json](examples/claude-code/settings.example.json)
 - End-to-end integration walkthrough and a worked demo: [docs/claude-code-reference-integration.md](docs/claude-code-reference-integration.md) · [examples/claude-code/stack-demo/](examples/claude-code/stack-demo/)

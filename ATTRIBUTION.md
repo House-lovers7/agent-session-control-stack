@@ -11,11 +11,15 @@ Credits:
 
 This project aims to document how these ideas can be composed safely across Claude Code and Codex.
 
+The optional plugin marketplace in this repository (`.claude-plugin/marketplace.json`) lists the upstream plugins **by reference only**: `claude plugin install` pulls each author's original repository unmodified, with their license, README, and authorship intact. Nothing is vendored, forked, or rebranded. The only first-party plugin is `ascs` (`plugins/ascs/`), a read-only doctor that diagnoses the composition and credits the upstream authors in its output.
+
 **Disclosure**: claude-code-session-health and this repository share the same maintainer. The recommendation to use session-health as the single compact decider is based on technical separation of responsibilities, not authorship. In particular, compact-plus's reminder only fires if an external statusline writes a warn-marker file, so not installing that producer disables the reminder while preserving compact-plus's state capture and recovery behavior. See [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md) for the reasoning; challenges to it are welcome.
 
 ---
 
 本リポジトリは、上記の各 OSS を置き換えるものではありません。
 各作者の実装とアイデアを尊重し、長時間 AI エージェント運用のための統合アーキテクチャとして「安全な組み合わせ方」を文書化するものです。上流のコードは同梱していません。
+
+本リポジトリの marketplace（`.claude-plugin/marketplace.json`）も同様に、上流プラグインを**参照のみ**で列挙します。インストールされるのは各作者の原本リポジトリそのもの（ライセンス・README・作者表記も原本のまま）であり、同梱・fork・改名は行いません。
 
 All factual claims about the upstream projects in this repository were verified against their READMEs and sources on 2026-07-05. If you are an upstream author and find anything misrepresented, please open an issue — corrections take priority.

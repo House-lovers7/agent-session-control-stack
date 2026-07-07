@@ -1,0 +1,15 @@
+---
+description: Read-only diagnosis of the Agent Session Control Stack — which layers are active, single-compact-decider check
+allowed-tools: Bash(bash *)
+---
+
+Stack doctor output (read-only; the script writes nothing and calls no API):
+
+!`bash "${CLAUDE_PLUGIN_ROOT}/scripts/ascs_doctor.sh"`
+
+Report the output above to the user layer by layer, in their language. Rules:
+
+- "not installed" / "not listening" layers are informational — the stack is adoptable layer by layer. Do not present them as failures.
+- If a CONFLICT line is present, explain it first: two components are advising compaction, and the fix is removing the compact-warn marker producer (see architecture.md §4 of the agent-session-control-stack repository), not reconfiguring compact-plus.
+- If the pxpipe layer is listening, repeat the lossy-boundary reminder: byte-exact values (hashes, commit SHAs, IDs, secrets, exact paths) must not be handled by allowlisted models through the proxy.
+- Do not propose /compact, install anything, or change any configuration from this command.
