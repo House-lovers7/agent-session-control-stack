@@ -102,6 +102,14 @@ The measurement path is intentionally conservative. It reports:
 
 It does not claim productivity gains, model superiority, speed improvements, or a validated full-stack composition effect.
 
+## What this repo is / is not
+
+- This **is** a reference stack for long-running AI coding agent sessions.
+- This is **not** a benchmark.
+- It does **not** bundle upstream code — plugins are listed **by reference**: installing pulls the authors' original repositories unmodified ([ATTRIBUTION.md](ATTRIBUTION.md)).
+- It helps you **diagnose and preserve** long-running agent sessions across compaction and restarts.
+- The composition effect is **not proven yet** — see [Evidence status](#evidence-status).
+
 ## Problem
 
 Long-running AI coding agents fail in predictable ways:

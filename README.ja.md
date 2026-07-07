@@ -4,6 +4,32 @@
 
 English: [README.md](README.md)
 
+## Quickstart（5分）
+
+```bash
+claude plugin marketplace add House-lovers7/agent-session-control-stack
+claude plugin install ascs@ascs
+```
+
+その後 Claude Code 内で `/ascs:doctor` を実行してください — どの層が有効か、single compact decider ルールが保たれているかを read-only で診断します。
+
+full stack（健全性検知 + 状態保存/復旧）を導入する場合:
+
+```bash
+claude plugin install session-health@ascs
+claude plugin install compact-plus@ascs
+```
+
+プラグインは**参照のみ**で列挙しており、インストールは各作者の原本リポジトリを無改変で取得します。pxpipe（圧縮層）は proxy でありプラグインではないため、別途オプトインです。詳細は後述の「インストール（marketplace）」節を参照してください。
+
+## What this repo is / is not
+
+- これは長時間 AI コーディングエージェントセッションのための **reference stack です**。
+- これは **ベンチマークではありません**。
+- upstream のコードは**同梱しません** — プラグインは各作者の原本リポジトリを参照インストールします。
+- 長時間セッションを compact・再起動をまたいで**診断し、状態を保存する**ためのものです。
+- 合成効果（3 層を同時に走らせた効果）は**まだ実証されていません** — 後述の「Evidence status」を参照。
+
 ## Problem
 
 長時間の AI コーディングエージェントは、決まったパターンで劣化します。
