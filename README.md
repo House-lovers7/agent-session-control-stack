@@ -1,5 +1,7 @@
 # Agent Session Control Stack
 
+[![tests](https://github.com/House-lovers7/agent-session-control-stack/actions/workflows/test.yml/badge.svg)](https://github.com/House-lovers7/agent-session-control-stack/actions/workflows/test.yml)
+
 A reference architecture and lightweight tooling layer for controlling long-running AI coding agent sessions.
 
 ASCS helps you compose:

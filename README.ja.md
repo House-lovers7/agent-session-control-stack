@@ -1,5 +1,7 @@
 # Agent Session Control Stack
 
+[![tests](https://github.com/House-lovers7/agent-session-control-stack/actions/workflows/test.yml/badge.svg)](https://github.com/House-lovers7/agent-session-control-stack/actions/workflows/test.yml)
+
 長時間動作する AI コーディングエージェントのための参照アーキテクチャ。
 
 English: [README.md](README.md)
