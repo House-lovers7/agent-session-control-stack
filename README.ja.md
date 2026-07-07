@@ -185,6 +185,7 @@ ASCS は full-stack の composition effect をまだ測定していません。
 - Experiment 002 の無効な速度主張の公開訂正
 - Experiment 003 における事前登録済みの void 処理と closeout
 - Claude Code reference integration v0 と、ローカルでの Dogfood 0.1 usability / safety 確認
+- 実セッション 1 本での full-stack mechanism smoke — 3 層が同時に発火し、single decider ルールが維持された（[case study](docs/case-study-dogfood-0.2.md)。mechanism の証拠のみで、効果の証拠ではない）
 - 実験記録と product work の分離
 - Experiment 004 は valid comparison なしで停止（Pair 1 は operator の scope_differs 監査により void condition 3、Pair 2 は未実行）。この claim boundary は文章ではなく `scripts/ascs.py measure` が機械判定します
 

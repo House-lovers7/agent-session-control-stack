@@ -268,6 +268,7 @@ What is currently demonstrated:
 - public correction of an invalid Experiment 002 speed claim;
 - preregistered void handling and closeout in Experiment 003;
 - a Claude Code reference integration v0 with local Dogfood 0.1 usability/safety checks;
+- a full-stack mechanism smoke in one real session — all three layers activated together and the single-decider rule held ([case study](docs/case-study-dogfood-0.2.md); mechanism evidence only, not efficacy);
 - separation of experiment records from product work;
 - Experiment 004 stopped without a valid comparison (Pair 1 void condition 3 via an operator scope_differs audit; Pair 2 not run), and `scripts/ascs.py measure` machine-checks that claim boundary instead of leaving it to prose.
 
