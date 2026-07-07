@@ -110,6 +110,7 @@ Render with:
 python3 scripts/ascs.py measure --experiment 004                      # text
 python3 scripts/ascs.py measure --experiment 004 --format markdown    # markdown to stdout
 python3 scripts/ascs.py measure --experiment 004 --format markdown --output reports/experiment-004-claim-boundary.md
+python3 scripts/ascs.py measure --experiment-dir experiments/<dir>    # any experiment directory (arms = events.jsonl holders; p<N> tokens pair them)
 ```
 
 ## Future design sketch (not implemented)

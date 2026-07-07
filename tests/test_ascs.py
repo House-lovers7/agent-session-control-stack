@@ -527,5 +527,90 @@ class TestMeasureOutputFormats(unittest.TestCase):
         self.assertIn("## Unsupported claims", content)
 
 
+class TestMeasureExperimentDir(unittest.TestCase):
+    def test_experiment_dir_matches_004_pair_statuses(self):
+        with TemporaryDirectory() as tmp:
+            root = make_exp004_fixture(tmp)
+            legacy = ascs.experiment_004_measurement(root)
+            generic = ascs.generic_experiment_measurement(root)
+        legacy_pairs = {(p["pair"], p["status"]) for p in legacy["pair_statuses"]}
+        generic_pairs = {(p["pair"], p["status"]) for p in generic["pair_statuses"]}
+        self.assertEqual(legacy_pairs, generic_pairs)
+        self.assertEqual(legacy["experiment_status"], generic["experiment_status"])
+
+    def test_experiment_dir_single_arm_is_never_a_valid_comparison(self):
+        with TemporaryDirectory() as tmp:
+            arm = Path(tmp) / "2026-07-08-solo-run"
+            arm.mkdir()
+            write_events(arm / "events.jsonl", valid_arm())
+            result = ascs.generic_experiment_measurement(arm)
+        self.assertEqual(len(result["pair_statuses"]), 1)
+        pair = result["pair_statuses"][0]
+        self.assertEqual(pair["status"], "INCOMPLETE")
+        self.assertEqual(pair["claim_boundary"], "single-arm evidence; no comparison")
+
+    def test_experiment_dir_groups_arms_by_pair_token(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "experiment"
+            root.mkdir()
+            write_events(root / "run-p1-baseline" / "events.jsonl", valid_arm(failing=2))
+            write_events(root / "run-p1-treated" / "events.jsonl", valid_arm(failing=2))
+            result = ascs.generic_experiment_measurement(root)
+        self.assertEqual(len(result["pair_statuses"]), 1)
+        pair = result["pair_statuses"][0]
+        self.assertEqual(pair["pair"], "1")
+        self.assertEqual(pair["status"], "VALID COMPARISON")
+
+    def test_experiment_dir_detects_closeout_file(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "experiment"
+            root.mkdir()
+            write_events(root / "run-p1-baseline" / "events.jsonl", checkpointed_arm())
+            write_events(root / "run-p1-treated" / "events.jsonl", checkpointed_arm())
+            (root / "2026-07-08-closeout.md").write_text("closeout\n", encoding="utf-8")
+            result = ascs.generic_experiment_measurement(root)
+        self.assertEqual(result["experiment_status"], "STOPPED / no valid comparison")
+
+    def test_measure_cli_requires_exactly_one_selector(self):
+        with TemporaryDirectory() as tmp:
+            root = make_exp004_fixture(tmp)
+            with quiet() as (_out, err):
+                status_both = ascs.measure_experiment(
+                    argparse.Namespace(
+                        experiment="004", experiment_dir=str(root), experiments_dir=str(root)
+                    )
+                )
+            with quiet() as (_out, err2):
+                status_neither = ascs.measure_experiment(
+                    argparse.Namespace(experiment=None, experiment_dir=None, experiments_dir=str(root))
+                )
+        self.assertEqual(status_both, 1)
+        self.assertEqual(status_neither, 1)
+        self.assertIn("exactly one", err.getvalue())
+        self.assertIn("exactly one", err2.getvalue())
+
+    def test_measure_cli_experiment_dir_prints_report(self):
+        with TemporaryDirectory() as tmp:
+            root = make_exp004_fixture(tmp)
+            with quiet() as (out, _err):
+                status = ascs.measure_experiment(
+                    argparse.Namespace(experiment=None, experiment_dir=str(root), format="text")
+                )
+        self.assertEqual(status, 0)
+        self.assertIn("ASCS MEASURE RESULT", out.getvalue())
+        self.assertIn("VOID condition 3", out.getvalue())
+
+    def test_measure_cli_experiment_dir_fails_without_events(self):
+        with TemporaryDirectory() as tmp:
+            empty = Path(tmp) / "empty"
+            empty.mkdir()
+            with quiet() as (_out, err):
+                status = ascs.measure_experiment(
+                    argparse.Namespace(experiment=None, experiment_dir=str(empty), format="text")
+                )
+        self.assertEqual(status, 1)
+        self.assertIn("no events.jsonl", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -224,12 +224,19 @@ This repository defines what "it works" would mean before claiming it: metrics, 
 - [docs/measurement-plan.md](docs/measurement-plan.md) · [docs/risk-register.md](docs/risk-register.md) (risks, unverified points, withdrawal criteria)
 - [docs/measurement-harness.md](docs/measurement-harness.md) — `scripts/ascs.py`, a manual Phase 2 recording helper (repo-shape doctor + experiment capture). It is not the Phase 4+ automated tooling. The early runs under [experiments/](experiments/) validate the harness itself; Experiment 002 ([summary](experiments/2026-07-06-codex-handoff-002-summary.md)) is the first manual n=1 before/after pair for the Codex handoff protocol — consistency evidence only, and still not the composition effect.
 
-ASCS is not just a design document anymore: `scripts/ascs.py measure` is the first conservative claim-boundary measure path, starting with Experiment 004. It can generate a conservative report for recorded Experiment 004 evidence, classify stopped / void / not-run evidence without making productivity claims, and reject output paths that would overwrite core evidence files.
+ASCS is not just a design document anymore: `scripts/ascs.py measure` is a conservative claim-boundary measure path. It can generate a conservative report for recorded experiment evidence — the built-in Experiment 004 set or any experiment directory — classify stopped / void / not-run evidence without making productivity claims, and reject output paths that would overwrite core evidence files.
 
 It renders the machine-checked claim boundary — ASCS evidence-loop evidence, upstream runtime evidence, composition evidence, and the claims the evidence does **not** support ([model](docs/claim-boundary-model.md)). It reads evidence files and writes only when an explicit non-evidence `--output` path is provided:
 
 ```sh
+# built-in Experiment 004 evidence
 python3 scripts/ascs.py measure --experiment 004
+
+# any experiment directory: arms are the directory itself and/or immediate
+# subdirectories containing events.jsonl; p<N> name tokens group arms into pairs
+python3 scripts/ascs.py measure --experiment-dir experiments/<your-experiment>
+
+# write a markdown report (never into evidence directories)
 python3 scripts/ascs.py measure --experiment 004 --format markdown \
   --output /tmp/experiment-004-claim-boundary.md
 ```

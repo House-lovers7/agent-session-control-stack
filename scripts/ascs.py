@@ -608,13 +608,17 @@ def pair_verdict(pair: str, arm_events: dict[str, list[dict[str, Any]]]) -> dict
         status = "INCOMPLETE"
         claim_boundary = "incomplete pair; no comparison"
         reasons.append(f"Pair {pair} did not reach the interruption checkpoint in both arms.")
-    elif all(has_event(events, "pair-verdict") for events in arm_events.values()):
+    elif len(arm_events) >= 2 and all(has_event(events, "pair-verdict") for events in arm_events.values()):
         status = "VALID COMPARISON"
         claim_boundary = "consistency evidence only; not causality"
         reasons.append(
             f"Pair {pair} completed both arms with pair-verdict events; "
             "a single internally consistent pair is consistency evidence, not causality."
         )
+    elif len(arm_events) < 2:
+        status = "INCOMPLETE"
+        claim_boundary = "single-arm evidence; no comparison"
+        reasons.append(f"Pair {pair} has a single arm; a comparison requires baseline and treated arms.")
     else:
         status = "INCOMPLETE"
         claim_boundary = "checkpointed but no valid verdict"
@@ -947,6 +951,55 @@ def experiment_004_measurement(experiments_dir: Path) -> dict[str, Any]:
     return compute_claim_verdict(experiment_004_evidence(experiments_dir))
 
 
+PAIR_TOKEN_RE = re.compile(r"(?:^|-)p(\d+)(?:-|$)")
+
+
+def generic_experiment_evidence(experiment_dir: Path) -> dict[str, Any]:
+    """Read-only evidence collection for any experiment directory.
+
+    Arms are the experiment directory itself and/or its immediate
+    subdirectories that contain an `events.jsonl`. Arm names containing a
+    `p<N>` token (e.g. `...-p1-baseline`) are grouped into pair N; every
+    other arm forms its own single-arm pair. A single-arm pair can never
+    reach VALID COMPARISON, so this stays conservative by construction.
+    """
+    arms: dict[str, Path] = {}
+    if (experiment_dir / "events.jsonl").exists():
+        arms[experiment_dir.name] = experiment_dir
+    if experiment_dir.is_dir():
+        for child in sorted(experiment_dir.iterdir()):
+            if child.is_dir() and (child / "events.jsonl").exists():
+                arms[child.name] = child
+
+    grouped: dict[str, list[str]] = {}
+    for arm_name in arms:
+        match = PAIR_TOKEN_RE.search(arm_name)
+        pair_id = match.group(1) if match else arm_name
+        grouped.setdefault(pair_id, []).append(arm_name)
+
+    def pair_sort_key(pair_id: str) -> tuple[int, str]:
+        return (0, pair_id.zfill(8)) if pair_id.isdigit() else (1, pair_id)
+
+    return {
+        "experiment": experiment_dir.name,
+        "closeout_exists": any(experiment_dir.glob("*closeout*.md")),
+        "pairs": [
+            {
+                "pair": pair_id,
+                "arm_events": {
+                    arm_name: read_events(arms[arm_name] / "events.jsonl")
+                    for arm_name in sorted(grouped[pair_id])
+                },
+            }
+            for pair_id in sorted(grouped, key=pair_sort_key)
+        ],
+    }
+
+
+def generic_experiment_measurement(experiment_dir: Path) -> dict[str, Any]:
+    return compute_claim_verdict(generic_experiment_evidence(experiment_dir))
+
+
 def render_measurement_text(result: dict[str, Any]) -> str:
     lines = ["ASCS MEASURE RESULT"]
     lines.append(f"- Experiment status: {result['experiment_status']}")
@@ -1066,11 +1119,25 @@ def output_path_rejection_reason(output_path: Path, experiments_dir: Path) -> st
 
 
 def measure_experiment(args: argparse.Namespace) -> int:
-    experiments_dir = Path(args.experiments_dir)
-    if args.experiment != "004":
-        print("FAIL only Experiment 004 measurement is supported", file=sys.stderr)
+    experiment_dir = getattr(args, "experiment_dir", None)
+    if bool(experiment_dir) == bool(args.experiment):
+        print("FAIL pass exactly one of --experiment or --experiment-dir", file=sys.stderr)
         return 1
-    result = experiment_004_measurement(experiments_dir)
+    if experiment_dir:
+        experiments_dir = Path(experiment_dir)
+        if not experiments_dir.is_dir():
+            print(f"FAIL {experiments_dir} is not a directory", file=sys.stderr)
+            return 1
+        result = generic_experiment_measurement(experiments_dir)
+        if not result["pair_statuses"]:
+            print(
+                f"FAIL no events.jsonl found in {experiments_dir} or its immediate subdirectories",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        experiments_dir = Path(args.experiments_dir)
+        result = experiment_004_measurement(experiments_dir)
     output_format = getattr(args, "format", "text")
     rendered = (
         render_measurement_markdown(result) if output_format == "markdown" else render_measurement_text(result)
@@ -1299,7 +1366,12 @@ def build_parser() -> argparse.ArgumentParser:
     score_parser.set_defaults(func=score_experiment)
 
     measure_parser = subparsers.add_parser("measure", help="read-only claim-boundary measurement")
-    measure_parser.add_argument("--experiment", required=True, choices=("004",))
+    measure_parser.add_argument("--experiment", choices=("004",))
+    measure_parser.add_argument(
+        "--experiment-dir",
+        help="measure any experiment directory: arms are the directory itself and/or "
+        "immediate subdirectories containing events.jsonl; p<N> name tokens group arms into pairs",
+    )
     measure_parser.add_argument(
         "--experiments-dir",
         default=str(repo_root() / "experiments"),
