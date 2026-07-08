@@ -2,27 +2,99 @@
 
 [![tests](https://github.com/House-lovers7/agent-session-control-stack/actions/workflows/test.yml/badge.svg)](https://github.com/House-lovers7/agent-session-control-stack/actions/workflows/test.yml)
 
-長時間動作する AI コーディングエージェントのための参照アーキテクチャ。
+長時間動作する AI コーディングエージェントセッションを制御するための、参照アーキテクチャと軽量ツール層。
+
+ASCS が合成するもの:
+
+- **Compression（圧縮）** — 肥大したコンテキストを安全に圧縮する
+- **Health Detection（健全性検知）** — セッションの過熱を検知する
+- **Checkpointing（状態保存）** — plan・決定・失敗試行・worker 構成を保存する
+- **Recovery（復旧）** — compact・中断・fresh-session 再起動の後に安全に再開する
+
+核となるルール:
+
+> 要約は仮説。原本と state ファイルが真実。
 
 English: [README.md](README.md)
 
-## Quickstart（5分）
+## What you can use today（今日から使えるもの）
+
+ASCS は設計文書だけではありません。今日から 4 つの実用的な使い方ができます。
+
+### 1. Claude Code スタックを診断する
+
+read-only の ASCS doctor をインストール:
 
 ```bash
 claude plugin marketplace add House-lovers7/agent-session-control-stack
 claude plugin install ascs@ascs
 ```
 
-その後 Claude Code 内で `/ascs:doctor` を実行してください — どの層が有効か、single compact decider ルールが保たれているかを read-only で診断します。
+その後 Claude Code 内で実行:
 
-full stack（健全性検知 + 状態保存/復旧）を導入する場合:
-
-```bash
-claude plugin install session-health@ascs
-claude plugin install compact-plus@ascs
+```text
+/ascs:doctor
 ```
 
-プラグインは**参照のみ**で列挙しており、インストールは各作者の原本リポジトリを無改変で取得します。pxpipe（圧縮層）は proxy でありプラグインではないため、別途オプトインです。詳細は後述の「インストール（marketplace）」節を参照してください。
+どの層が有効かを報告します:
+
+- Compression: `pxpipe`
+- Health Detection: `claude-code-session-health`
+- Checkpoint / Recovery: `compact-plus`
+- single compact decider ルール
+
+doctor は read-only です。hook のインストール、proxy の起動、API 呼び出し、設定変更は一切行いません。
+
+### 2. Claude Code reference stack を動かす
+
+```bash
+claude plugin marketplace add House-lovers7/agent-session-control-stack
+claude plugin install session-health@ascs
+claude plugin install compact-plus@ascs
+claude plugin install ascs@ascs
+```
+
+これで reference の Claude Code 構成になります:
+
+- `session-health` がセッションの過熱を判定する
+- `compact-plus` が compact 前後の状態を保存・復元する
+- `ascs` がスタックの安全な合成を確認する
+
+`pxpipe` はリクエスト経路の proxy なので、独立したオプトインです:
+
+```bash
+npx -y pxpipe-proxy
+alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
+```
+
+`pxpipe` を有効化する前に safety notes を読んでください。設計上 lossy であり、commit SHA、ID、secret、正確なパス、migration 名、deploy target のような byte-exact な値には使えません。
+
+### 3. Codex handoff protocol を使う
+
+Codex には Claude Code 型の compaction hook が無いため、ASCS は protocol で代替します:
+
+- `examples/codex/AGENTS.md` をコピーまたは適応する
+- `.agent-session/` ディレクトリを作る
+- handoff・plan・決定・失敗試行・recovery notes をディスクに残す
+- 次のセッションに、作業前にそれらのファイルを読ませる
+
+開始点:
+
+```text
+examples/codex/AGENTS.md
+templates/state-file.md
+```
+
+### 4. 保守的な claim-boundary レポートを生成する
+
+軽量な measurement ヘルパーも含まれています:
+
+```bash
+python3 scripts/ascs.py doctor
+python3 scripts/ascs.py measure --experiment 004
+```
+
+measurement path は意図的に保守的です。observed facts / allowed claims / disallowed claims / blockers / next required evidence を報告し、生産性向上・モデル優位・速度改善・full-stack 合成効果の検証済み、といった主張はしません。
 
 ## What this repo is / is not
 
@@ -93,7 +165,7 @@ Architecture と claim-boundary の導線:
 
 合成を衝突させない 1 つのルール: session-health と compact-plus は、それぞれ異なる基準でモデルに compact を促せます。本 stack は **session-health を唯一の判定者**と定め、compact-plus の reminder を**設定ではなく構成で**無効化します。reminder は外部 statusline が warn marker ファイルを書いたときだけ発火するため、marker 生成器を導入しなければ一度も発火せず、state 保存・復旧注入は無傷で動き続けます。
 
-### インストール（marketplace）
+### 詳細セットアップ（marketplace）
 
 ```bash
 claude plugin marketplace add House-lovers7/agent-session-control-stack

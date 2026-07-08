@@ -175,7 +175,7 @@ This repository does **not** replace them and bundles none of their code. It doc
 
 The one rule that keeps the composition from conflicting: both session-health and compact-plus can tell the model to compact, on different criteria. This stack designates a **single decider** — session-health — and disables the compact-plus reminder *by construction*: the reminder only fires if an external statusline writes a warn-marker file, so not installing that producer turns it off while compact-plus's state capture and recovery keep working untouched.
 
-### Detailed setup」
+### Detailed setup
 
 ```bash
 claude plugin marketplace add House-lovers7/agent-session-control-stack
@@ -257,8 +257,6 @@ ASCS MEASURE RESULT
   - checkpoint_recovery (compact-plus (u-ichi)): no evidence
 - Composition evidence: no composition evidence
 ```
-
-
 
 ## Evidence status
 
