@@ -191,6 +191,8 @@ npx -y pxpipe-proxy                    # proxy on 127.0.0.1:47821
 alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 ```
 
+If Claude Code stops responding right after enabling pxpipe, the usual cause is `ANTHROPIC_BASE_URL` pointing at a proxy that is not running — see [Troubleshooting](docs/claude-code/recommended-stack.md#troubleshooting-pxpipe).
+
 - Setup, hook ownership, env conventions: [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md)
 - Config snippet: [examples/claude-code/settings.example.json](examples/claude-code/settings.example.json)
 - End-to-end integration walkthrough and a worked demo: [docs/claude-code-reference-integration.md](docs/claude-code-reference-integration.md) · [examples/claude-code/stack-demo/](examples/claude-code/stack-demo/)

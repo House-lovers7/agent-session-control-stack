@@ -41,6 +41,10 @@ if (exec 3<>/dev/tcp/127.0.0.1/47821) 2>/dev/null; then
   say "                  reminder: pxpipe is lossy by design; keep byte-exact work (hashes, IDs, secrets) off allowlisted models. See docs/claude-code/pxpipe-safety.md"
 else
   say "  1 Compression   pxpipe proxy: not listening on 127.0.0.1:47821 (layer inactive — optional, opt-in)"
+  if [[ "${ANTHROPIC_BASE_URL:-}" == *"127.0.0.1:47821"* ]]; then
+    say "                  WARNING: this session's ANTHROPIC_BASE_URL (${ANTHROPIC_BASE_URL}) points at the proxy, but nothing is listening."
+    say "                  Sessions launched this way cannot reach any model. Start the proxy (npx -y pxpipe-proxy) or unset ANTHROPIC_BASE_URL."
+  fi
 fi
 
 # --- Layer 2: Health Detection (session-health plugin) ----------------------

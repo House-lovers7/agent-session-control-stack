@@ -181,6 +181,8 @@ npx -y pxpipe-proxy                    # 127.0.0.1:47821 で proxy 起動
 alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 ```
 
+pxpipe 有効化直後に Claude Code が応答しなくなった場合、ほとんどは「`ANTHROPIC_BASE_URL` がプロキシを向いているのにプロキシが起動していない」状態です — [Troubleshooting](docs/claude-code/recommended-stack.md#troubleshooting-pxpipe) を参照してください。
+
 - セットアップ・hook 責務・env 規約: [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md)
 - 設定スニペット: [examples/claude-code/settings.example.json](examples/claude-code/settings.example.json)
 - エンドツーエンド統合ウォークスルーとデモ例: [docs/claude-code-reference-integration.md](docs/claude-code-reference-integration.md) · [examples/claude-code/stack-demo/](examples/claude-code/stack-demo/)

@@ -57,6 +57,20 @@ With both compact-plus backends empty, you still get transcript backups and reco
 
 Everything this stack injects into your prompts: 0 tokens normally; ~60 tokens while hot (at most once per 20 requests); a few hundred tokens once, right after a compact. If you add another injecting plugin, revisit this table.
 
+## Troubleshooting (pxpipe)
+
+**Every request fails right after enabling pxpipe.** The usual cause: `ANTHROPIC_BASE_URL` points at `http://127.0.0.1:47821` but the proxy is not running, so Claude Code cannot reach any model. Fix: start the proxy (`npx -y pxpipe-proxy`) or unset `ANTHROPIC_BASE_URL` for that session. Prevention: never put `ANTHROPIC_BASE_URL` in `settings.json` — use an opt-in alias so a forgotten proxy only affects sessions you explicitly launch through it:
+
+```bash
+alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
+```
+
+**The proxy is gone after a reboot.** `npx pxpipe-proxy` does not install a service. Start it manually per work session — deliberate at the opt-in stage: a proxy you forgot you daemonized is how byte-exact work ends up on the compressed path.
+
+**Bypass compression without restarting anything.** `PXPIPE_DISABLE=1` is a temporary passthrough (metrics keep recording); `PXPIPE_MODELS=off` turns imaging off while keeping the proxy in place. See [pxpipe-safety.md](pxpipe-safety.md) for when to use which.
+
+**Check the current state.** `lsof -nP -iTCP:47821 -sTCP:LISTEN` shows whether the proxy is up. `/ascs:doctor` (ascs plugin) reports layer status, whether the current session is routed through the proxy, and warns if `ANTHROPIC_BASE_URL` points at a proxy that is not listening.
+
 ---
 
 *Facts about upstream behavior were verified against upstream sources on 2026-07-05. Design rationale (in Japanese): [architecture.md](../architecture.md), [hook-responsibilities.md](../hook-responsibilities.md).*
