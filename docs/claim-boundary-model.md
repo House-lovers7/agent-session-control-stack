@@ -1,8 +1,10 @@
 # ASCS Claim-Boundary Model
 
 The claim-boundary engine (`compute_claim_verdict` in `scripts/ascs.py`) is a
-pure function: it takes parsed experiment evidence (events per arm per pair,
-plus a closeout flag) and returns a structured verdict. All file reading lives
+pure function: it validates parsed experiment evidence (events per arm per
+pair, plus a closeout flag) and returns a structured verdict. Legacy events
+without `schema_version` are rejected by default; repository-history readers
+must opt into compatibility explicitly. All file reading lives
 in a thin I/O layer (`experiment_004_evidence`); the engine itself performs no
 I/O. `measure` never writes `events.jsonl`, `report.md`, `experiment.json`, or
 any target-repo file. The only write `measure` can perform is the report path
@@ -25,11 +27,13 @@ Evaluated in this order (first match wins):
    and voids the pair immediately.
 3. **NOT RUN** — no arm recorded `arm_start`. An unrun pair is *not* failure
    evidence; its claim boundary is "incomplete pair; not a failure".
-4. **INCOMPLETE** — arms started but did not both reach the interruption
-   checkpoint, or reached it without a recorded `pair-verdict`.
-5. **VALID COMPARISON** — both arms started, checkpointed, and recorded
-   `pair-verdict` events. Even then the claim boundary is "consistency
-   evidence only; not causality".
+4. **INCOMPLETE** — the group is not exactly one baseline plus one treated
+   arm, either arm did not reach the interruption checkpoint in order, or the
+   two post-checkpoint `pair-verdict` records are missing/incoherent.
+5. **VALID COMPARISON** — exactly one baseline and one treated arm completed
+   `arm_start` → `interruption_reached` → `pair-verdict` in order, and both
+   arms recorded the same non-empty verdict note for the same pair. Even then
+   the claim boundary is "consistency evidence only; not causality".
 
 ## Experiment classification
 
@@ -47,8 +51,12 @@ or runtime-superiority claims from a single experiment.
 ## Metric trust rules
 
 - `resume_time_seconds` is trusted only when derived from `resume-start` and
-  `first-progress-edit` events (`derive_resume_time_from_events`). Untrusted
-  values never appear in `allowed_claims`.
+  `first-progress-edit` events (`derive_resume_time_from_events`). An intervening
+  `resume-attempt-aborted` clears the attempt and requires a fresh
+  `resume-start`. Untrusted values never appear in `allowed_claims`.
+- Every persisted metric must be a non-negative integer (except the explicit
+  Experiment 004 `missed_state_files=n/a` case). Invalid persisted data fails
+  scoring rather than being coerced.
 - `failing_count` differences across arms are **observed facts only**. They
   never imply `scope_differs` (that requires an explicit audit event) and
   never support performance claims.
@@ -81,7 +89,8 @@ runtime behavior. A layer's `improved productivity` claim is disallowed even
 when valid pairs exist, because valid pairs are consistency evidence.
 
 `pair-checkpoint-audit` events are harness audit evidence, not layer mechanism
-evidence, and are excluded from layer detection.
+evidence, and are excluded from layer detection. Layer markers match only as
+exact or delimiter-bounded event tokens, never arbitrary substrings.
 
 ## Composition claim boundary
 
