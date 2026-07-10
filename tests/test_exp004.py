@@ -326,7 +326,7 @@ class TestPairTransactions(unittest.TestCase):
     def load(self, arm):
         return list(self.state[arm.name])
 
-    def record_with_injected_failure(self, arm, event_name, note):
+    def record_with_injected_failure(self, arm, event_name, note, **metadata):
         if (
             self.fail_once
             and arm.name == "004-p1-treated"
@@ -336,6 +336,22 @@ class TestPairTransactions(unittest.TestCase):
             return 1
         self.state[arm.name].append({"event": event_name, "note": note})
         return 0
+
+    def test_pair_records_include_structured_schema_metadata(self):
+        arm = exp004.arm_from_name("004-p1-baseline")
+        with mock.patch.object(exp004, "run_ascs", return_value=0) as run:
+            exp004.record_event(
+                arm,
+                "pair-verdict",
+                "verdict",
+                pair_id="1",
+                condition="baseline",
+                transaction_id="tx-1",
+            )
+        command = run.call_args.args[0]
+        self.assertIn("--pair-id", command)
+        self.assertIn("--condition", command)
+        self.assertIn("--transaction-id", command)
 
     def test_partial_pair_write_is_aborted_then_retry_commits_idempotently(self):
         transaction_id = "exp004-pair-1-checkpoint-audit-test"

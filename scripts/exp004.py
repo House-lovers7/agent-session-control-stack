@@ -333,18 +333,32 @@ def run_ascs(args: list[str]) -> int:
     return proc.returncode
 
 
-def record_event(arm: Arm, event_name: str, note: str) -> int:
-    return run_ascs(
-        [
-            "record",
-            "--experiment",
-            arm.experiment_dir,
-            "--event",
-            event_name,
-            "--note",
-            note,
-        ]
-    )
+def record_event(
+    arm: Arm,
+    event_name: str,
+    note: str,
+    *,
+    pair_id: str | None = None,
+    condition: str | None = None,
+    transaction_id: str | None = None,
+) -> int:
+    command = [
+        "record",
+        "--experiment",
+        arm.experiment_dir,
+        "--event",
+        event_name,
+        "--note",
+        note,
+    ]
+    for flag, value in (
+        ("--pair-id", pair_id),
+        ("--condition", condition),
+        ("--transaction-id", transaction_id),
+    ):
+        if value is not None:
+            command.extend((flag, value))
+    return run_ascs(command)
 
 
 def event_note_field(event: dict[str, object], field: str) -> str | None:
@@ -467,7 +481,14 @@ def record_pair_event(
                         f"pair transaction payload mismatch for {arm.name}/{stage_name}"
                     )
                 continue
-            if record_event(arm, stage_name, stage_note):
+            if record_event(
+                arm,
+                stage_name,
+                stage_note,
+                pair_id=pair,
+                condition=arm.condition,
+                transaction_id=transaction_id,
+            ):
                 abort_note = (
                     f"txid={transaction_id}; pair={pair}; target_event={event_name}; "
                     f"failed_stage={stage_name}"
@@ -476,7 +497,14 @@ def record_pair_event(
                     if not arm_has_transaction_stage(
                         abort_arm, "pair-event-abort", transaction_id, event_name
                     ):
-                        if record_event(abort_arm, "pair-event-abort", abort_note):
+                        if record_event(
+                            abort_arm,
+                            "pair-event-abort",
+                            abort_note,
+                            pair_id=pair,
+                            condition=abort_arm.condition,
+                            transaction_id=transaction_id,
+                        ):
                             print(
                                 f"WARN could not record abort marker for {abort_arm.name}",
                                 file=sys.stderr,

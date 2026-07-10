@@ -12,7 +12,7 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +58,24 @@ OPTIONAL_METRIC_KEYS = [
 
 RESUME_START_EVENT = "resume-start"
 FIRST_PROGRESS_EVENT = "first-progress-edit"
+RESUME_ABORT_EVENT = "resume-attempt-aborted"
+
+EVENT_SCHEMA_VERSION = 1
+EVENT_FILE_LIMIT = 10 * 1024 * 1024
+EVENT_ALLOWED_FIELDS = {
+    "schema_version",
+    "timestamp",
+    "event",
+    "note",
+    "pair_id",
+    "condition",
+    "transaction_id",
+}
+EVENT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._:/-]{0,99}$")
+EVENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+EXPERIMENT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+ARM_CONDITION_RE = re.compile(r"(?:^|[-_.])(baseline|treated)(?:[-_.]|$)")
+LAYER_EVENT_DELIMITERS = r"[-_:/\.]"
 
 EXPERIMENT_004_PAIRS = {
     "1": (
@@ -164,6 +182,94 @@ def today_slug() -> str:
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def nonnegative_int(value: str | int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if isinstance(value, bool) or parsed < 0:
+        raise argparse.ArgumentTypeError("must be a non-negative integer")
+    return parsed
+
+
+def safe_experiment_name(value: str) -> str:
+    if not isinstance(value, str) or not EXPERIMENT_NAME_RE.fullmatch(value) or ".." in value:
+        raise argparse.ArgumentTypeError(
+            "experiment name must start with an alphanumeric character, contain only "
+            "ASCII letters, digits, '.', '_', or '-', be at most 80 characters, and not contain '..'"
+        )
+    return value
+
+
+def parse_utc_timestamp(value: Any, context: str) -> datetime:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{context}: timestamp must be a non-empty string")
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"{context}: timestamp must be ISO 8601") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        raise ValueError(f"{context}: timestamp must include a UTC offset")
+    return parsed
+
+
+def validate_event_record(
+    event: Any,
+    *,
+    allow_legacy: bool = False,
+    context: str = "event",
+) -> dict[str, Any]:
+    if not isinstance(event, dict):
+        raise ValueError(f"{context}: event must be a JSON object")
+    version = event.get("schema_version")
+    legacy = version is None
+    if legacy:
+        if not allow_legacy:
+            raise ValueError(
+                f"{context}: legacy event has no schema_version; pass allow_legacy=True explicitly"
+            )
+    elif isinstance(version, bool) or version != EVENT_SCHEMA_VERSION:
+        raise ValueError(
+            f"{context}: unsupported schema_version {version!r}; expected {EVENT_SCHEMA_VERSION}"
+        )
+
+    unknown_fields = set(event) - EVENT_ALLOWED_FIELDS
+    if unknown_fields:
+        raise ValueError(f"{context}: event contains {len(unknown_fields)} unknown field(s)")
+
+    parse_utc_timestamp(event.get("timestamp"), context)
+    event_name = event.get("event")
+    if not isinstance(event_name, str) or not EVENT_NAME_RE.fullmatch(event_name):
+        raise ValueError(f"{context}: event must be a 1-100 character safe event name")
+    note = event.get("note")
+    if not isinstance(note, str) or len(note) > 8192 or (not legacy and not note):
+        raise ValueError(
+            f"{context}: note must be a string of at most 8192 characters "
+            "(non-empty for schema_version 1)"
+        )
+    if any(ord(char) < 32 and char != "\t" for char in note):
+        raise ValueError(f"{context}: note must not contain control characters or newlines")
+
+    for field in ("pair_id", "transaction_id"):
+        if field in event and (
+            not isinstance(event[field], str) or not EVENT_ID_RE.fullmatch(event[field])
+        ):
+            raise ValueError(f"{context}: {field} must be a safe 1-64 character identifier")
+    if "condition" in event and event["condition"] not in {"baseline", "treated"}:
+        raise ValueError(f"{context}: condition must be baseline or treated")
+    return dict(event)
+
+
+def reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON object key")
+        value[key] = item
+    return value
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -365,8 +471,16 @@ def doctor(args: argparse.Namespace) -> int:
 
 def init_experiment(args: argparse.Namespace) -> int:
     root = repo_root()
-    base_dir = root / "experiments"
-    experiment_dir = base_dir / f"{today_slug()}-{args.name}"
+    try:
+        name = safe_experiment_name(args.name)
+    except argparse.ArgumentTypeError as exc:
+        print(f"FAIL invalid experiment name: {exc}", file=sys.stderr)
+        return 1
+    base_dir = (root / "experiments").resolve()
+    experiment_dir = (base_dir / f"{today_slug()}-{name}").resolve(strict=False)
+    if experiment_dir.parent != base_dir:
+        print("FAIL invalid experiment name: resolved path escapes experiments/", file=sys.stderr)
+        return 1
     if experiment_dir.exists():
         print(f"FAIL {experiment_dir} already exists", file=sys.stderr)
         return 1
@@ -374,7 +488,7 @@ def init_experiment(args: argparse.Namespace) -> int:
     experiment_dir.mkdir(parents=True)
     data = {
         "created_at": now_iso(),
-        "name": args.name,
+        "name": name,
         "runtime": args.runtime,
         "target_repo": args.target_repo,
         "events_file": "events.jsonl",
@@ -406,8 +520,8 @@ def looks_like_non_utc_time(note: str) -> bool:
 
 def record_event(args: argparse.Namespace) -> int:
     experiment_dir = Path(args.experiment)
-    if not experiment_dir.exists():
-        print(f"FAIL {experiment_dir} does not exist", file=sys.stderr)
+    if not experiment_dir.is_dir():
+        print(f"FAIL {experiment_dir} is not an experiment directory", file=sys.stderr)
         return 1
 
     if looks_like_non_utc_time(args.note):
@@ -418,10 +532,20 @@ def record_event(args: argparse.Namespace) -> int:
         )
 
     event = {
+        "schema_version": EVENT_SCHEMA_VERSION,
         "timestamp": now_iso(),
         "event": args.event,
         "note": args.note,
     }
+    for field in ("pair_id", "condition", "transaction_id"):
+        value = getattr(args, field, None)
+        if value is not None:
+            event[field] = value
+    try:
+        validate_event_record(event)
+    except ValueError as exc:
+        print(f"FAIL invalid event: {exc}", file=sys.stderr)
+        return 1
     events_path = experiment_dir / "events.jsonl"
     with events_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, sort_keys=True) + "\n")
@@ -434,19 +558,25 @@ def metric_as_int(metrics: dict[str, Any], key: str) -> int:
     if isinstance(value, bool):
         raise ValueError(f"{key} must be an integer, got boolean")
     if isinstance(value, int):
-        return value
-    return int(value)
+        parsed = value
+    elif isinstance(value, str) and re.fullmatch(r"[0-9]+", value):
+        parsed = int(value)
+    else:
+        raise ValueError(f"{key} must be an integer")
+    if parsed < 0:
+        raise ValueError(f"{key} must be non-negative")
+    return parsed
 
 
 def parse_count_or_na(value: str) -> int | str:
     if value.lower() in {"n/a", "na"}:
         return "n/a"
-    return int(value)
+    return nonnegative_int(value)
 
 
 def failed_criteria(metrics: dict[str, Any]) -> list[str]:
     failures: list[str] = []
-    if metrics["missed_state_files"] != 0:
+    if metric_as_int(metrics, "missed_state_files") != 0:
         failures.append("missed_state_files != 0")
     if metric_as_int(metrics, "repeated_failures") != 0:
         failures.append("repeated_failures != 0")
@@ -461,6 +591,20 @@ def status_for_metrics(
     metrics: dict[str, Any],
     gate_profile: str = GATE_PROFILE_DEFAULT,
 ) -> dict[str, Any]:
+    required = (
+        EXPERIMENT_004_METRIC_KEYS
+        if gate_profile == GATE_PROFILE_EXPERIMENT_004
+        else METRIC_KEYS
+    )
+    for key in required:
+        if key == "missed_state_files" and metrics.get(key) == "n/a":
+            if gate_profile != GATE_PROFILE_EXPERIMENT_004:
+                raise ValueError("missed_state_files=n/a is only valid for experiment-004")
+            continue
+        metric_as_int(metrics, key)
+    if "recovery_quality" in metrics and metric_as_int(metrics, "recovery_quality") > 4:
+        raise ValueError("recovery_quality must be between 0 and 4")
+
     if gate_profile == GATE_PROFILE_EXPERIMENT_004:
         return {
             "status": "REPORTED_ONLY",
@@ -500,48 +644,79 @@ def calculate_score(
 def derive_resume_time(events_path: Path) -> tuple[int | None, str]:
     """Derive resume_time_seconds from recorded events.
 
-    Uses the LAST `resume-start` event (an aborted resume attempt is
-    superseded by recording a fresh `resume-start`) and the first
-    `first-progress-edit` event after it. Returns (seconds, detail) or
+    Uses the LAST `resume-start` event and the first `first-progress-edit`
+    after it. `resume-attempt-aborted` clears the attempt; only a fresh
+    `resume-start` can begin another clock. Returns (seconds, detail) or
     (None, reason).
     """
     if not events_path.exists():
         return None, f"{events_path} does not exist"
-    return derive_resume_time_from_events(read_events(events_path))
+    return derive_resume_time_from_events(
+        read_events(events_path, allow_legacy=True), allow_legacy=True
+    )
 
 
-def derive_resume_time_from_events(events: list[dict[str, Any]]) -> tuple[int | None, str]:
-    """Pure counterpart of derive_resume_time over already-parsed events."""
+def derive_resume_time_from_events(
+    events: list[dict[str, Any]], *, allow_legacy: bool = False
+) -> tuple[int | None, str]:
+    """Explicit resume/abort/progress state machine over validated events."""
     resume_start = None
     first_progress = None
-    for event in events:
-        if event.get("event") == RESUME_START_EVENT:
+    aborted_since_start = False
+    try:
+        validated = [
+            validate_event_record(event, allow_legacy=allow_legacy, context=f"event[{index}]")
+            for index, event in enumerate(events)
+        ]
+    except ValueError as exc:
+        return None, f"invalid event evidence: {exc}"
+    for event in validated:
+        event_name = event["event"]
+        if event_name == RESUME_START_EVENT:
             resume_start = event["timestamp"]
             first_progress = None
-        elif event.get("event") == FIRST_PROGRESS_EVENT and resume_start and not first_progress:
+            aborted_since_start = False
+        elif event_name == RESUME_ABORT_EVENT:
+            resume_start = None
+            first_progress = None
+            aborted_since_start = True
+        elif event_name == FIRST_PROGRESS_EVENT and resume_start and not first_progress:
             first_progress = event["timestamp"]
     if resume_start is None:
+        if aborted_since_start:
+            return None, f"`{RESUME_ABORT_EVENT}` requires a fresh `{RESUME_START_EVENT}`"
         return None, f"no `{RESUME_START_EVENT}` event recorded"
     if first_progress is None:
         return None, f"no `{FIRST_PROGRESS_EVENT}` event recorded after the last `{RESUME_START_EVENT}`"
-    delta = datetime.fromisoformat(first_progress) - datetime.fromisoformat(resume_start)
+    delta = parse_utc_timestamp(first_progress, FIRST_PROGRESS_EVENT) - parse_utc_timestamp(
+        resume_start, RESUME_START_EVENT
+    )
     seconds = int(delta.total_seconds())
     if seconds < 0:
         return None, f"`{FIRST_PROGRESS_EVENT}` precedes `{RESUME_START_EVENT}`"
     return seconds, f"{resume_start} -> {first_progress}"
 
 
-def read_events(events_path: Path) -> list[dict[str, Any]]:
+def read_events(events_path: Path, *, allow_legacy: bool = False) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     if not events_path.exists():
         return events
+    if events_path.stat().st_size > EVENT_FILE_LIMIT:
+        raise ValueError(f"{events_path}: events file exceeds {EVENT_FILE_LIMIT} bytes")
     for line_number, line in enumerate(events_path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
-        event = json.loads(line)
-        if not isinstance(event, dict):
-            raise ValueError(f"{events_path}:{line_number}: event must be a JSON object")
-        events.append(event)
+        try:
+            event = json.loads(line, object_pairs_hook=reject_duplicate_json_keys)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ValueError(f"{events_path}:{line_number}: invalid or ambiguous JSON") from exc
+        events.append(
+            validate_event_record(
+                event,
+                allow_legacy=allow_legacy,
+                context=f"{events_path}:{line_number}",
+            )
+        )
     return events
 
 
@@ -642,6 +817,68 @@ def failing_count(events: list[dict[str, Any]]) -> int | None:
     return None
 
 
+def arm_condition(arm_name: str, events: list[dict[str, Any]]) -> str | None:
+    conditions = set(ARM_CONDITION_RE.findall(arm_name.lower()))
+    conditions.update(
+        str(event["condition"])
+        for event in events
+        if event.get("event") == "arm_start" and "condition" in event
+    )
+    return next(iter(conditions)) if len(conditions) == 1 else None
+
+
+def lifecycle_positions(events: list[dict[str, Any]]) -> tuple[int | None, int | None, int | None]:
+    start = next((index for index, event in enumerate(events) if event["event"] == "arm_start"), None)
+    checkpoint = next(
+        (
+            index
+            for index, event in enumerate(events)
+            if event["event"] == "interruption_reached" and start is not None and index > start
+        ),
+        None,
+    )
+    verdict = next(
+        (
+            index
+            for index in range(len(events) - 1, -1, -1)
+            if events[index]["event"] == "pair-verdict"
+        ),
+        None,
+    )
+    return start, checkpoint, verdict
+
+
+def pair_verdict_signature(
+    pair: str,
+    condition: str,
+    events: list[dict[str, Any]],
+) -> tuple[str | None, str | None]:
+    verdicts = [event for event in events if event["event"] == "pair-verdict"]
+    if not verdicts:
+        return None, "missing pair-verdict"
+    verdict = verdicts[-1]
+    note = " ".join(verdict["note"].split())
+    if not note:
+        return None, "empty pair-verdict note"
+    if verdict.get("pair_id") not in {None, pair}:
+        return None, "pair-verdict pair_id does not match its pair"
+    note_pair = re.search(r"(?:^|[;\s])pair\s*[=:]\s*([A-Za-z0-9._-]+)", note)
+    if note_pair and note_pair.group(1) != pair:
+        return None, "pair-verdict note names a different pair"
+    if verdict.get("condition") not in {None, condition}:
+        return None, "pair-verdict condition does not match its arm"
+    signature = json.dumps(
+        {
+            "note": note,
+            "pair_id": verdict.get("pair_id"),
+            "transaction_id": verdict.get("transaction_id"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return signature, None
+
+
 def pair_verdict(pair: str, arm_events: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     """Pure per-pair claim-boundary classification over parsed events."""
     all_events = [event for events in arm_events.values() for event in events]
@@ -649,12 +886,14 @@ def pair_verdict(pair: str, arm_events: dict[str, list[dict[str, Any]]]) -> dict
     scope_differs = has_scope_differs_event(all_events)
     started = {arm: has_event(events, "arm_start") for arm, events in arm_events.items()}
     checkpointed = {arm: has_event(events, "interruption_reached") for arm, events in arm_events.items()}
+    conditions = {arm: arm_condition(arm, events) for arm, events in arm_events.items()}
+    valid_arm_shape = len(arm_events) == 2 and set(conditions.values()) == {"baseline", "treated"}
     failing_counts = {arm: failing_count(events) for arm, events in arm_events.items()}
     verdict_committed = has_committed_pair_event(arm_events, "pair-verdict")
     verdict_pending = has_pending_pair_event(arm_events, "pair-verdict")
     resume_time = {}
     for arm, events in arm_events.items():
-        seconds, detail = derive_resume_time_from_events(events)
+        seconds, detail = derive_resume_time_from_events(events, allow_legacy=True)
         resume_time[arm] = {"seconds": seconds, "trusted": seconds is not None, "detail": detail}
 
     reasons = []
@@ -675,31 +914,66 @@ def pair_verdict(pair: str, arm_events: dict[str, list[dict[str, Any]]]) -> dict
         status = "NOT RUN"
         claim_boundary = "incomplete pair; not a failure"
         reasons.append(f"Pair {pair} arms were never started; an unrun pair is not failure evidence.")
+    elif len(arm_events) < 2:
+        status = "INCOMPLETE"
+        claim_boundary = "single-arm evidence; no comparison"
+        reasons.append(f"Pair {pair} has a single arm; a comparison requires baseline and treated arms.")
+    elif not valid_arm_shape:
+        status = "INCOMPLETE"
+        claim_boundary = "requires exactly one baseline and one treated arm"
+        reasons.append(
+            f"Pair {pair} does not contain exactly two unambiguous arms: one baseline and one treated."
+        )
     elif not all(started.values()) or not all(checkpointed.values()):
         status = "INCOMPLETE"
         claim_boundary = "incomplete pair; no comparison"
         reasons.append(f"Pair {pair} did not reach the interruption checkpoint in both arms.")
-    elif len(arm_events) >= 2 and verdict_committed:
-        status = "VALID COMPARISON"
-        claim_boundary = "consistency evidence only; not causality"
-        reasons.append(
-            f"Pair {pair} completed both arms with pair-verdict events; "
-            "a single internally consistent pair is consistency evidence, not causality."
-        )
     elif verdict_pending:
         status = "INCOMPLETE"
         claim_boundary = "pending pair-verdict transaction; no comparison"
         reasons.append(
             f"Pair {pair} has an uncommitted pair-verdict transaction; retry or recover it before claims."
         )
-    elif len(arm_events) < 2:
-        status = "INCOMPLETE"
-        claim_boundary = "single-arm evidence; no comparison"
-        reasons.append(f"Pair {pair} has a single arm; a comparison requires baseline and treated arms.")
     else:
-        status = "INCOMPLETE"
-        claim_boundary = "checkpointed but no valid verdict"
-        reasons.append(f"Pair {pair} reached checkpoints but recorded no pair-verdict.")
+        signatures = {}
+        verdict_errors = []
+        lifecycle_valid = True
+        for arm, events in arm_events.items():
+            start, checkpoint, verdict_position = lifecycle_positions(events)
+            if (
+                start is None
+                or checkpoint is None
+                or verdict_position is None
+                or verdict_position <= checkpoint
+            ):
+                lifecycle_valid = False
+            signature, error = pair_verdict_signature(pair, str(conditions[arm]), events)
+            signatures[arm] = signature
+            if error:
+                verdict_errors.append(f"{arm}: {error}")
+        coherent = (
+            verdict_committed
+            and not verdict_errors
+            and all(signature for signature in signatures.values())
+            and len(set(signatures.values())) == 1
+        )
+        if lifecycle_valid and coherent:
+            status = "VALID COMPARISON"
+            claim_boundary = "consistency evidence only; not causality"
+            reasons.append(
+                f"Pair {pair} completed one baseline and one treated arm with coherent pair-verdict events; "
+                "a single internally consistent pair is consistency evidence, not causality."
+            )
+        else:
+            status = "INCOMPLETE"
+            claim_boundary = "checkpointed but no coherent pair verdict"
+            if not lifecycle_valid:
+                verdict_errors.append("pair-verdict must occur after arm_start and interruption_reached")
+            if not coherent and not verdict_errors:
+                verdict_errors.append("pair-verdict notes differ across arms")
+            reasons.append(
+                f"Pair {pair} has no coherent post-checkpoint verdict: {'; '.join(verdict_errors)}."
+            )
 
     observed_counts = {arm: count for arm, count in failing_counts.items() if count is not None}
     if len(set(observed_counts.values())) > 1:
@@ -716,6 +990,7 @@ def pair_verdict(pair: str, arm_events: dict[str, list[dict[str, Any]]]) -> dict
         "arms": tuple(arm_events),
         "started": started,
         "checkpointed": checkpointed,
+        "conditions": conditions,
         "failing_counts": failing_counts,
         "resume_time": resume_time,
         "reasons": reasons,
@@ -729,11 +1004,18 @@ def layer_verdict(
 ) -> dict[str, Any]:
     """Pure upstream runtime evidence classification. Mechanism evidence only —
     performance claims always additionally require valid pairs."""
+    def matches_marker(name: str, marker: str) -> bool:
+        return re.search(
+            rf"(?:^|{LAYER_EVENT_DELIMITERS}){re.escape(marker)}(?:$|{LAYER_EVENT_DELIMITERS})",
+            name,
+        ) is not None
+
     observed_events = sorted({
         name
         for name in (str(event.get("event", "")) for event in all_events)
         # pair-checkpoint-audit is ASCS harness audit evidence, not upstream runtime evidence
-        if name != "pair-checkpoint-audit" and any(marker in name for marker in spec["event_markers"])
+        if name != "pair-checkpoint-audit"
+        and any(matches_marker(name, marker) for marker in spec["event_markers"])
     })
 
     status = "mechanism events recorded; no validated claims" if observed_events else "no evidence"
@@ -839,7 +1121,82 @@ def composition_verdict(layer_evidence: dict[str, dict[str, Any]], valid_pair_co
     }
 
 
-def compute_claim_verdict(evidence: dict[str, Any]) -> dict[str, Any]:
+def validate_evidence_payload(
+    evidence: Any, *, allow_legacy: bool = False
+) -> dict[str, Any]:
+    if not isinstance(evidence, dict):
+        raise ValueError("evidence must be an object")
+    experiment = evidence.get("experiment", "")
+    if (
+        not isinstance(experiment, str)
+        or not experiment
+        or len(experiment) > 255
+        or any(ord(char) < 32 for char in experiment)
+    ):
+        raise ValueError("evidence experiment must be a non-empty string")
+    closeout_exists = evidence.get("closeout_exists", False)
+    if not isinstance(closeout_exists, bool):
+        raise ValueError("evidence closeout_exists must be boolean")
+    pairs = evidence.get("pairs", [])
+    if not isinstance(pairs, list):
+        raise ValueError("evidence pairs must be an array")
+    if len(pairs) > 1000:
+        raise ValueError("evidence contains too many pairs")
+
+    normalized_pairs = []
+    legacy_event_count = 0
+    seen_pairs = set()
+    for pair_index, entry in enumerate(pairs):
+        if not isinstance(entry, dict):
+            raise ValueError(f"pairs[{pair_index}] must be an object")
+        pair = entry.get("pair")
+        if not isinstance(pair, str) or not EVENT_ID_RE.fullmatch(pair):
+            raise ValueError(f"pairs[{pair_index}].pair must be a safe identifier")
+        if pair in seen_pairs:
+            raise ValueError(f"duplicate pair identifier: {pair}")
+        seen_pairs.add(pair)
+        arm_events = entry.get("arm_events")
+        if not isinstance(arm_events, dict) or not arm_events:
+            raise ValueError(f"pairs[{pair_index}].arm_events must be a non-empty object")
+        if len(arm_events) > 100:
+            raise ValueError(f"pairs[{pair_index}] contains too many arms")
+        normalized_arms = {}
+        for arm, events in arm_events.items():
+            if (
+                not isinstance(arm, str)
+                or not arm
+                or len(arm) > 255
+                or arm in {".", ".."}
+                or any(ord(char) < 32 for char in arm)
+            ):
+                raise ValueError(f"pairs[{pair_index}] has an invalid arm name")
+            if not isinstance(events, list):
+                raise ValueError(f"pairs[{pair_index}].arm_events[{arm!r}] must be an array")
+            if len(events) > 100000:
+                raise ValueError(f"pairs[{pair_index}].arm_events[{arm!r}] has too many events")
+            normalized_events = []
+            for event_index, event in enumerate(events):
+                normalized = validate_event_record(
+                    event,
+                    allow_legacy=allow_legacy,
+                    context=f"pairs[{pair_index}].arm_events[{arm!r}][{event_index}]",
+                )
+                if "schema_version" not in normalized:
+                    legacy_event_count += 1
+                normalized_events.append(normalized)
+            normalized_arms[arm] = normalized_events
+        normalized_pairs.append({"pair": pair, "arm_events": normalized_arms})
+    return {
+        "experiment": experiment,
+        "closeout_exists": closeout_exists,
+        "pairs": normalized_pairs,
+        "legacy_event_count": legacy_event_count,
+    }
+
+
+def compute_claim_verdict(
+    evidence: dict[str, Any], *, allow_legacy: bool = False
+) -> dict[str, Any]:
     """Pure claim-boundary verdict over parsed experiment evidence.
 
     Takes only in-memory data and performs no I/O. `evidence` shape:
@@ -850,9 +1207,11 @@ def compute_claim_verdict(evidence: dict[str, Any]) -> dict[str, Any]:
           "pairs": [{"pair": "1", "arm_events": {arm_name: [event, ...]}}, ...],
         }
     """
-    experiment = str(evidence.get("experiment", ""))
-    closeout_exists = bool(evidence.get("closeout_exists"))
-    pairs = evidence.get("pairs", [])
+    evidence = validate_evidence_payload(evidence, allow_legacy=allow_legacy)
+    experiment = evidence["experiment"]
+    closeout_exists = evidence["closeout_exists"]
+    pairs = evidence["pairs"]
+    legacy_event_count = evidence["legacy_event_count"]
     pair_statuses = [pair_verdict(entry["pair"], entry["arm_events"]) for entry in pairs]
     valid_pairs = [entry for entry in pair_statuses if entry["status"] == "VALID COMPARISON"]
     void_pairs = [entry for entry in pair_statuses if str(entry["status"]).startswith("VOID")]
@@ -877,6 +1236,10 @@ def compute_claim_verdict(evidence: dict[str, Any]) -> dict[str, Any]:
         if closeout_exists
         else f"Experiment {experiment} closeout is not present"
     ]
+    if legacy_event_count:
+        observed_facts.append(
+            f"{legacy_event_count} legacy event(s) were accepted through explicit compatibility mode."
+        )
     for entry in pair_statuses:
         observed_facts.append(f"Pair {entry['pair']} status: {entry['status']}")
         observed_counts = {arm: count for arm, count in entry["failing_counts"].items() if count is not None}
@@ -990,6 +1353,7 @@ def compute_claim_verdict(evidence: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "experiment": experiment,
+        "legacy_event_count": legacy_event_count,
         "experiment_status": experiment_status,
         "pair_statuses": pair_statuses,
         "evidence_level": evidence_level,
@@ -1015,7 +1379,9 @@ def experiment_004_evidence(experiments_dir: Path) -> dict[str, Any]:
             {
                 "pair": pair,
                 "arm_events": {
-                    arm_dir: read_events(experiments_dir / arm_dir / "events.jsonl")
+                    arm_dir: read_events(
+                        experiments_dir / arm_dir / "events.jsonl", allow_legacy=True
+                    )
                     for arm_dir in arm_dirs
                 },
             }
@@ -1025,7 +1391,7 @@ def experiment_004_evidence(experiments_dir: Path) -> dict[str, Any]:
 
 
 def experiment_004_measurement(experiments_dir: Path) -> dict[str, Any]:
-    return compute_claim_verdict(experiment_004_evidence(experiments_dir))
+    return compute_claim_verdict(experiment_004_evidence(experiments_dir), allow_legacy=True)
 
 
 PAIR_TOKEN_RE = re.compile(r"(?:^|-)p(\d+)(?:-|$)")
@@ -1064,7 +1430,9 @@ def generic_experiment_evidence(experiment_dir: Path) -> dict[str, Any]:
             {
                 "pair": pair_id,
                 "arm_events": {
-                    arm_name: read_events(arms[arm_name] / "events.jsonl")
+                    arm_name: read_events(
+                        arms[arm_name] / "events.jsonl", allow_legacy=True
+                    )
                     for arm_name in sorted(grouped[pair_id])
                 },
             }
@@ -1074,7 +1442,7 @@ def generic_experiment_evidence(experiment_dir: Path) -> dict[str, Any]:
 
 
 def generic_experiment_measurement(experiment_dir: Path) -> dict[str, Any]:
-    return compute_claim_verdict(generic_experiment_evidence(experiment_dir))
+    return compute_claim_verdict(generic_experiment_evidence(experiment_dir), allow_legacy=True)
 
 
 def render_measurement_text(result: dict[str, Any]) -> str:
@@ -1200,21 +1568,25 @@ def measure_experiment(args: argparse.Namespace) -> int:
     if bool(experiment_dir) == bool(args.experiment):
         print("FAIL pass exactly one of --experiment or --experiment-dir", file=sys.stderr)
         return 1
-    if experiment_dir:
-        experiments_dir = Path(experiment_dir)
-        if not experiments_dir.is_dir():
-            print(f"FAIL {experiments_dir} is not a directory", file=sys.stderr)
-            return 1
-        result = generic_experiment_measurement(experiments_dir)
-        if not result["pair_statuses"]:
-            print(
-                f"FAIL no events.jsonl found in {experiments_dir} or its immediate subdirectories",
-                file=sys.stderr,
-            )
-            return 1
-    else:
-        experiments_dir = Path(args.experiments_dir)
-        result = experiment_004_measurement(experiments_dir)
+    try:
+        if experiment_dir:
+            experiments_dir = Path(experiment_dir)
+            if not experiments_dir.is_dir():
+                print(f"FAIL {experiments_dir} is not a directory", file=sys.stderr)
+                return 1
+            result = generic_experiment_measurement(experiments_dir)
+            if not result["pair_statuses"]:
+                print(
+                    f"FAIL no events.jsonl found in {experiments_dir} or its immediate subdirectories",
+                    file=sys.stderr,
+                )
+                return 1
+        else:
+            experiments_dir = Path(args.experiments_dir)
+            result = experiment_004_measurement(experiments_dir)
+    except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        print(f"FAIL invalid evidence: {exc}", file=sys.stderr)
+        return 1
     output_format = getattr(args, "format", "text")
     rendered = (
         render_measurement_markdown(result) if output_format == "markdown" else render_measurement_text(result)
@@ -1242,6 +1614,29 @@ def finish_experiment(args: argparse.Namespace) -> int:
     experiment_json = experiment_dir / "experiment.json"
     if not experiment_json.exists():
         print(f"FAIL {experiment_json} does not exist", file=sys.stderr)
+        return 1
+
+    for field in (
+        "resume_time",
+        "missed_checkpoint_items",
+        "repeated_failures",
+        "rejected_option_relapses",
+        "human_corrections",
+        "recovery_quality",
+    ):
+        value = getattr(args, field, None)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+            print(f"FAIL {field} must be a non-negative integer", file=sys.stderr)
+            return 1
+    if args.recovery_quality is not None and args.recovery_quality > 4:
+        print("FAIL recovery_quality must be between 0 and 4", file=sys.stderr)
+        return 1
+    if args.missed_state_files != "n/a" and (
+        isinstance(args.missed_state_files, bool)
+        or not isinstance(args.missed_state_files, int)
+        or args.missed_state_files < 0
+    ):
+        print("FAIL missed_state_files must be a non-negative integer or n/a", file=sys.stderr)
         return 1
 
     derived, detail = derive_resume_time(experiment_dir / "events.jsonl")
@@ -1358,11 +1753,19 @@ def score_experiment(args: argparse.Namespace) -> int:
         return 1
 
     typed_metrics: dict[str, Any] = {}
-    for key in required_keys:
-        if key == "missed_state_files" and metrics[key] == "n/a":
-            typed_metrics[key] = "n/a"
-        else:
-            typed_metrics[key] = int(metrics[key])
+    try:
+        for key in required_keys:
+            if key == "missed_state_files" and metrics[key] == "n/a":
+                typed_metrics[key] = "n/a"
+            else:
+                typed_metrics[key] = metric_as_int(metrics, key)
+        if "recovery_quality" in metrics:
+            recovery_quality = metric_as_int(metrics, "recovery_quality")
+            if recovery_quality > 4:
+                raise ValueError("recovery_quality must be between 0 and 4")
+    except (TypeError, ValueError) as exc:
+        print(f"FAIL invalid metrics: {exc}", file=sys.stderr)
+        return 1
     existing_score = data.get("score", {})
     existing_scored_at = existing_score.get("scored_at") if isinstance(existing_score, dict) else None
     score = calculate_score(typed_metrics, existing_scored_at, gate_profile)
@@ -1382,7 +1785,7 @@ def score_experiment(args: argparse.Namespace) -> int:
         print(f"| human_corrections | {typed_metrics['human_corrections']} | must be <= 1 |")
         print(f"| resume_time_seconds | {typed_metrics['resume_time_seconds']} | reported only |")
     if "recovery_quality" in metrics and gate_profile != GATE_PROFILE_EXPERIMENT_004:
-        print(f"| recovery_quality | {int(metrics['recovery_quality'])} | reported only (0-4) |")
+        print(f"| recovery_quality | {recovery_quality} | reported only (0-4) |")
     print("")
     print(f"Score: **{score['status']}**")
     if score["failed_criteria"]:
@@ -1401,7 +1804,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.set_defaults(func=doctor)
 
     init_parser = subparsers.add_parser("init", help="create an experiment directory")
-    init_parser.add_argument("--name", required=True)
+    init_parser.add_argument("--name", required=True, type=safe_experiment_name)
     init_parser.add_argument("--runtime", required=True, choices=("codex", "claude-code"))
     init_parser.add_argument("--target-repo", required=True)
     init_parser.add_argument("--gate-profile", choices=GATE_PROFILES, default=GATE_PROFILE_DEFAULT)
@@ -1411,24 +1814,27 @@ def build_parser() -> argparse.ArgumentParser:
     record_parser.add_argument("--experiment", required=True)
     record_parser.add_argument("--event", required=True)
     record_parser.add_argument("--note", required=True)
+    record_parser.add_argument("--pair-id", default=None)
+    record_parser.add_argument("--condition", choices=("baseline", "treated"), default=None)
+    record_parser.add_argument("--transaction-id", default=None)
     record_parser.set_defaults(func=record_event)
 
     finish_parser = subparsers.add_parser("finish", help="save final metrics and update report.md")
     finish_parser.add_argument("--experiment", required=True)
     finish_parser.add_argument(
         "--resume-time",
-        type=int,
+        type=nonnegative_int,
         default=None,
         dest="resume_time",
         help="cross-check only; resume_time_seconds is derived from "
         "resume-start/first-progress-edit events when they exist",
     )
     finish_parser.add_argument("--gate-profile", choices=GATE_PROFILES, default=GATE_PROFILE_DEFAULT)
-    finish_parser.add_argument("--missed-checkpoint-items", type=int, default=None)
+    finish_parser.add_argument("--missed-checkpoint-items", type=nonnegative_int, default=None)
     finish_parser.add_argument("--missed-state-files", required=True, type=parse_count_or_na)
-    finish_parser.add_argument("--repeated-failures", type=int, default=None)
-    finish_parser.add_argument("--rejected-option-relapses", type=int, default=None)
-    finish_parser.add_argument("--human-corrections", required=True, type=int)
+    finish_parser.add_argument("--repeated-failures", type=nonnegative_int, default=None)
+    finish_parser.add_argument("--rejected-option-relapses", type=nonnegative_int, default=None)
+    finish_parser.add_argument("--human-corrections", required=True, type=nonnegative_int)
     finish_parser.add_argument(
         "--recovery-quality",
         type=int,
