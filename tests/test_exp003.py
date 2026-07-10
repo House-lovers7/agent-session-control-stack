@@ -172,6 +172,20 @@ class TestArmDefinitions(unittest.TestCase):
             self.assertEqual(first.order, min(orders))
 
 
+class TestGitStatusParsing(unittest.TestCase):
+    def test_porcelain_z_preserves_special_paths_and_rename_source(self):
+        output = " M path with spaces.md\0?? line\nbreak.txt\0R  new.md\0old.md\0"
+        self.assertEqual(
+            exp003.parse_porcelain_z(output),
+            [
+                (" M", "path with spaces.md"),
+                ("??", "line\nbreak.txt"),
+                ("R ", "new.md"),
+                ("R ", "old.md"),
+            ],
+        )
+
+
 class TestBaselineSetupVerification(unittest.TestCase):
     def setUp(self):
         self._tmp = TemporaryDirectory()

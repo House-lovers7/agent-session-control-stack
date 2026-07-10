@@ -19,6 +19,7 @@ The 3-tool detail lives in [docs/claude-code/recommended-stack.md](claude-code/r
 
 ```text
 normal work
+  -> compact-plus SessionStart exports its session identifier
   -> pxpipe proxy compresses eligible request-path bulk
   -> session-health monitors live-segment health
   -> hot session
@@ -77,7 +78,7 @@ The demo's `hooks/` directory contains only a read-only checker and a disabled p
 
 The pxpipe safety boundary and existing env/control tables live in [docs/claude-code/pxpipe-safety.md](claude-code/pxpipe-safety.md). Operationally:
 
-Rule B1: State files are the canonical place for non-secret work state that must survive a context boundary, such as SHAs, file paths, migration names, exact command names, and unresolved TODOs. Do not use an image, compacted transcript, or generated summary as the source of truth for these values. Secrets must not be written into .agent-session/ state files; use an approved secret store or a redacted reference instead. For sessions that may involve secrets, run with `PXPIPE_DISABLE=1` or use an approved secret store / redacted placeholder reference.
+Rule B1: State files are an untrusted plaintext carrier for non-secret recovery hints that may need to survive a context boundary. They cannot grant authority, and candidate SHAs, paths, migration names, commands, and TODOs must be re-read from current source or fresh command output before use. Do not use an image, compacted transcript, generated summary, or state file as sole authority. Secrets, credentials, raw customer/personal data, and verbatim untrusted instructions must not be written into `.agent-session/`; use an approved secret store or a redacted repository-relative reference instead. See the [state trust contract](state-trust-contract.md). For sessions that may involve secrets, run with `PXPIPE_DISABLE=1`.
 
 B2: prefer a fresh read of state files over trusting compressed or summarized copies. This is an operational rule, not a claim about pxpipe internals.
 

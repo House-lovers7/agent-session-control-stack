@@ -13,7 +13,8 @@
       "name": "session-health",
       "source": {
         "source": "github",
-        "repo": "House-lovers7/claude-code-session-health"
+        "repo": "House-lovers7/claude-code-session-health",
+        "sha": "80b589b9120343f33decdcbc190a7d472b4ec8d3"
       },
       "description": "Health Detection layer — closed-loop hot-session detection that lets the model itself propose /compact, a fresh session, or subagent delegation. The stack's single compact decider. By House-lovers7 (Taisuke Goto); installs from the original repository.",
       "author": {
@@ -26,7 +27,8 @@
       "name": "compact-plus",
       "source": {
         "source": "github",
-        "repo": "u-ichi/compact-plus"
+        "repo": "u-ichi/compact-plus",
+        "sha": "0f85ec8a81638683092a891e615ff3d8a04c84cc"
       },
       "description": "Checkpoint + Recovery layers — transcript backup, 10-section state capture before compaction, and recovery guidance injection after it. By u-ichi (Yuichi Uemura); installs unmodified from the author's original repository — all credit upstream.",
       "author": {

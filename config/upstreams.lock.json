@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-07-10",
+  "update_policy": "docs/upstream-compatibility.md",
+  "upstreams": {
+    "session-health": {
+      "type": "github",
+      "repo": "House-lovers7/claude-code-session-health",
+      "revision": "80b589b9120343f33decdcbc190a7d472b4ec8d3",
+      "version": "0.3.1",
+      "verified_at": "2026-07-10",
+      "reviewed_files": [
+        ".claude-plugin/plugin.json",
+        "README.md",
+        "hooks/hooks.json"
+      ],
+      "reviewed_capabilities": [
+        "UserPromptSubmit health warning",
+        "transcript-derived compact boundary detection",
+        "optional operator-owned statusline and Stop integration"
+      ]
+    },
+    "compact-plus": {
+      "type": "github",
+      "repo": "u-ichi/compact-plus",
+      "revision": "0f85ec8a81638683092a891e615ff3d8a04c84cc",
+      "version": "1.0.4",
+      "verified_at": "2026-07-10",
+      "reviewed_files": [
+        ".claude-plugin/plugin.json",
+        "README.md",
+        "hooks/hooks.json"
+      ],
+      "reviewed_capabilities": [
+        "UserPromptSubmit recovery and reminder checks",
+        "PreCompact transcript backup and state capture",
+        "PostCompact recovery marker",
+        "SessionStart session identifier export"
+      ]
+    },
+    "pxpipe-proxy": {
+      "type": "npm",
+      "package": "pxpipe-proxy",
+      "version": "0.8.0",
+      "integrity": "sha512-zmh319/seaTOGG46TYq+kGk/RcXSuBcfHENNsIriuqqKiJWd6709DNQfqzf6J+lL+Nc1QtOg5F/TNIOe7YeTBQ==",
+      "tarball": "https://registry.npmjs.org/pxpipe-proxy/-/pxpipe-proxy-0.8.0.tgz",
+      "source_repo": "teamchong/pxpipe",
+      "source_revision": "7dd54d395d119f5f822da5c1944ba5afbb02fa88",
+      "verified_at": "2026-07-10",
+      "reviewed_files": [
+        "README.md",
+        "package.json",
+        "src/core/proxy.ts"
+      ],
+      "reviewed_capabilities": [
+        "Anthropic Messages proxy transport",
+        "OpenAI Chat Completions proxy transport",
+        "OpenAI Responses proxy transport",
+        "model allowlist and passthrough controls"
+      ]
+    }
+  }
+}

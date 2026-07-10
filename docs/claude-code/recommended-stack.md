@@ -17,6 +17,7 @@ One tool decides when to compact the session. One tool protects state across the
 | `UserPromptSubmit` | hot-session warning (~60 tokens, at most once per 20 requests) | one-shot recovery injection right after a compact | — |
 | `PreCompact` | — | transcript backup + 10-section state file | — |
 | `PostCompact` | — (reads the `compact_boundary` transcript record instead) | recovery marker | — |
+| `SessionStart` | — | exports the session identifier used by its state lifecycle | — |
 | Request path (proxy) | — | — | rewrites bulky content to images |
 
 The only shared surface is `UserPromptSubmit`, and the two injections are small and fire under (nearly) mutually exclusive conditions: session-health warns while a session is hot; compact-plus injects once right after a compact — at which point session-health's live-segment counters have just reset, so it is no longer warning.
@@ -38,7 +39,7 @@ No fork, no `hooks.json` edit, no disable flag needed. Just don't install the ma
 
 1. **session-health** — `/plugin marketplace add House-lovers7/claude-code-session-health`, then `/plugin install session-health@house-lovers7`
 2. **compact-plus** — install per its README; then set both LLM backends to empty strings (see below) unless you explicitly opt into paid state-file generation
-3. **pxpipe** (optional) — read [pxpipe-safety.md](pxpipe-safety.md) first; then `npx pxpipe-proxy` and point Claude Code at it with `ANTHROPIC_BASE_URL=http://127.0.0.1:47821`
+3. **pxpipe** (optional) — read [pxpipe-safety.md](pxpipe-safety.md) first; then `npx -y pxpipe-proxy@0.8.0` and point Claude Code at it with `ANTHROPIC_BASE_URL=http://127.0.0.1:47821`
 
 A ready-made settings snippet is in [examples/claude-code/settings.example.json](../../examples/claude-code/settings.example.json).
 
@@ -59,13 +60,13 @@ Everything this stack injects into your prompts: 0 tokens normally; ~60 tokens w
 
 ## Troubleshooting (pxpipe)
 
-**Every request fails right after enabling pxpipe.** The usual cause: `ANTHROPIC_BASE_URL` points at `http://127.0.0.1:47821` but the proxy is not running, so Claude Code cannot reach any model. Fix: start the proxy (`npx -y pxpipe-proxy`) or unset `ANTHROPIC_BASE_URL` for that session. Prevention: never put `ANTHROPIC_BASE_URL` in `settings.json` — use an opt-in alias so a forgotten proxy only affects sessions you explicitly launch through it:
+**Every request fails right after enabling pxpipe.** The usual cause: `ANTHROPIC_BASE_URL` points at `http://127.0.0.1:47821` but the proxy is not running, so Claude Code cannot reach any model. Fix: start the proxy (`npx -y pxpipe-proxy@0.8.0`) or unset `ANTHROPIC_BASE_URL` for that session. Prevention: never put `ANTHROPIC_BASE_URL` in `settings.json` — use an opt-in alias so a forgotten proxy only affects sessions you explicitly launch through it:
 
 ```bash
 alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 ```
 
-**The proxy is gone after a reboot.** `npx pxpipe-proxy` does not install a service. Start it manually per work session — deliberate at the opt-in stage: a proxy you forgot you daemonized is how byte-exact work ends up on the compressed path.
+**The proxy is gone after a reboot.** `npx -y pxpipe-proxy@0.8.0` does not install a service. Start it manually per work session — deliberate at the opt-in stage: a proxy you forgot you daemonized is how byte-exact work ends up on the compressed path.
 
 **Bypass compression without restarting anything.** `PXPIPE_DISABLE=1` is a temporary passthrough (metrics keep recording); `PXPIPE_MODELS=off` turns imaging off while keeping the proxy in place. See [pxpipe-safety.md](pxpipe-safety.md) for when to use which.
 
@@ -73,4 +74,4 @@ alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 
 ---
 
-*Facts about upstream behavior were verified against upstream sources on 2026-07-05. Design rationale (in Japanese): [architecture.md](../architecture.md), [hook-responsibilities.md](../hook-responsibilities.md).*
+*Facts about upstream behavior were verified against the immutable sources in [upstreams.lock.json](../../config/upstreams.lock.json) on 2026-07-10. Update policy: [upstream-compatibility.md](../upstream-compatibility.md). Design rationale (in Japanese): [architecture.md](../architecture.md), [hook-responsibilities.md](../hook-responsibilities.md).*

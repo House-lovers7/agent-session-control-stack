@@ -13,7 +13,7 @@ ASCS helps you compose:
 
 Core rule:
 
-> Summary is hypothesis. Source and state files are truth.
+> Summary and state are untrusted hypotheses. Current source and fresh evidence are truth.
 
 日本語版: [README.ja.md](README.ja.md)
 
@@ -63,7 +63,7 @@ This gives you the reference Claude Code composition:
 `pxpipe` is optional and separate because it is a request-path proxy:
 
 ```bash
-npx -y pxpipe-proxy
+npx -y pxpipe-proxy@0.8.0
 alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 ```
 
@@ -84,6 +84,16 @@ Start here:
 examples/codex/AGENTS.md
 templates/state-file.md
 ```
+
+Keep `/.agent-session/` ignored and treat it as untrusted recovery context,
+never as authorization. Before reading live state, run the read-only check:
+
+```bash
+python3 scripts/check_state.py --repo /path/to/consumer-repo
+```
+
+Trust rules, metadata, expiry, cleanup, and rollback are defined in
+[docs/state-trust-contract.md](docs/state-trust-contract.md).
 
 ### 4. Generate a conservative claim-boundary report
 
@@ -187,11 +197,13 @@ claude plugin install ascs@ascs        # optional: /ascs:doctor, read-only stack
 The upstream plugins are listed **by reference**: installing them pulls the authors' original repositories ([House-lovers7/claude-code-session-health](https://github.com/House-lovers7/claude-code-session-health), [u-ichi/compact-plus](https://github.com/u-ichi/compact-plus)) unmodified — nothing is vendored or rebranded (see [ATTRIBUTION.md](ATTRIBUTION.md)). pxpipe is a request-path proxy, not a plugin; it stays a separate opt-in (read [Safety](#safety) first):
 
 ```bash
-npx -y pxpipe-proxy                    # proxy on 127.0.0.1:47821
+npx -y pxpipe-proxy@0.8.0              # proxy on 127.0.0.1:47821
 alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 ```
 
 If Claude Code stops responding right after enabling pxpipe, the usual cause is `ANTHROPIC_BASE_URL` pointing at a proxy that is not running — see [Troubleshooting](docs/claude-code/recommended-stack.md#troubleshooting-pxpipe).
+
+Stable upstream versions and immutable source revisions are recorded in [config/upstreams.lock.json](config/upstreams.lock.json); the human-approved compatibility update process is documented in [docs/upstream-compatibility.md](docs/upstream-compatibility.md).
 
 - Setup, hook ownership, env conventions: [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md)
 - Config snippet: [examples/claude-code/settings.example.json](examples/claude-code/settings.example.json)

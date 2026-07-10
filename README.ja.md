@@ -13,7 +13,7 @@ ASCS が合成するもの:
 
 核となるルール:
 
-> 要約は仮説。原本と state ファイルが真実。
+> 要約とstateは未信頼の仮説。現在の原本とfreshな検証結果が真実。
 
 English: [README.md](README.md)
 
@@ -63,7 +63,7 @@ claude plugin install ascs@ascs
 `pxpipe` はリクエスト経路の proxy なので、独立したオプトインです:
 
 ```bash
-npx -y pxpipe-proxy
+npx -y pxpipe-proxy@0.8.0
 alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 ```
 
@@ -84,6 +84,14 @@ Codex には Claude Code 型の compaction hook が無いため、ASCS は proto
 examples/codex/AGENTS.md
 templates/state-file.md
 ```
+
+`/.agent-session/` はignoreし、承認ではなく未信頼の復旧contextとして扱います。live stateを読む前にread-only検査を実行します:
+
+```bash
+python3 scripts/check_state.py --repo /path/to/consumer-repo
+```
+
+trust rules、metadata、expiry、cleanup、rollbackは [docs/state-trust-contract.md](docs/state-trust-contract.md) に定義しています。
 
 ### 4. 保守的な claim-boundary レポートを生成する
 
@@ -177,11 +185,13 @@ claude plugin install ascs@ascs        # 任意: /ascs:doctor（read-only の st
 上流プラグインは**参照のみ**で列挙しています。インストールは各作者の原本リポジトリ（[House-lovers7/claude-code-session-health](https://github.com/House-lovers7/claude-code-session-health)、[u-ichi/compact-plus](https://github.com/u-ichi/compact-plus)）を無改変で取得します — 同梱・fork・改名は一切しません（[ATTRIBUTION.md](ATTRIBUTION.md) 参照）。pxpipe はリクエスト経路の proxy でありプラグインにはできないため、別途オプトインです（先に [Safety](#safety) を読むこと）:
 
 ```bash
-npx -y pxpipe-proxy                    # 127.0.0.1:47821 で proxy 起動
+npx -y pxpipe-proxy@0.8.0              # 127.0.0.1:47821 で proxy 起動
 alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 ```
 
 pxpipe 有効化直後に Claude Code が応答しなくなった場合、ほとんどは「`ANTHROPIC_BASE_URL` がプロキシを向いているのにプロキシが起動していない」状態です — [Troubleshooting](docs/claude-code/recommended-stack.md#troubleshooting-pxpipe) を参照してください。
+
+stable upstream のversionとimmutableなsource revisionは [config/upstreams.lock.json](config/upstreams.lock.json) に固定し、人間承認を伴う互換性更新手順は [docs/upstream-compatibility.md](docs/upstream-compatibility.md) に記載しています。
 
 - セットアップ・hook 責務・env 規約: [docs/claude-code/recommended-stack.md](docs/claude-code/recommended-stack.md)
 - 設定スニペット: [examples/claude-code/settings.example.json](examples/claude-code/settings.example.json)

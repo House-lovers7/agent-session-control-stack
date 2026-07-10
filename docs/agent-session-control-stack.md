@@ -54,8 +54,8 @@ Claude Code uses the runtime surfaces that already exist in the upstream tools:
 
 - Compression: pxpipe local proxy.
 - Health Detection: claude-code-session-health `UserPromptSubmit` hook.
-- Checkpoint and Recovery: compact-plus `PreCompact`, `PostCompact`, and
-  recovery injection.
+- Checkpoint and Recovery: compact-plus `SessionStart`, `PreCompact`,
+  `PostCompact`, and recovery injection.
 
 Phase 1 provides only a settings example in
 `examples/claude-code/settings.example.json`. It intentionally keeps

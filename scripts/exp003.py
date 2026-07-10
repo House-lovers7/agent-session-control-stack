@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-DEFAULT_TARGET_REPO = "/Users/tg/projects/app_development/supabase-rls-guard"
 MARKER_BEGIN = "<!-- BEGIN ASCS EXPERIMENT SCAFFOLDING (exp-003) — do not commit -->"
 MARKER_END = "<!-- END ASCS EXPERIMENT SCAFFOLDING (exp-003) -->"
 AMENDMENT_NOTE = (
@@ -210,13 +209,41 @@ def ensure_target_repo(path_text: str) -> tuple[Path | None, int]:
 
 
 def ensure_clean(target_repo: Path) -> int:
-    proc = run_git(target_repo, ["status", "--porcelain"], capture=True)
+    proc = run_git(
+        target_repo,
+        ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        capture=True,
+    )
     if proc.returncode != 0:
         return fail("could not inspect target repo working tree")
-    if proc.stdout.strip():
-        print(proc.stdout, end="", file=sys.stderr)
+    entries = parse_porcelain_z(proc.stdout)
+    if entries:
+        for status, path in entries:
+            print(f"{status} {path}", file=sys.stderr)
         return fail("target repo working tree is not clean")
     return 0
+
+
+def parse_porcelain_z(output: str) -> list[tuple[str, str]]:
+    """Parse `git status --porcelain=v1 -z`, including rename source paths."""
+    tokens = output.split("\0")
+    entries: list[tuple[str, str]] = []
+    index = 0
+    while index < len(tokens):
+        record = tokens[index]
+        index += 1
+        if not record:
+            continue
+        if len(record) < 4 or record[2] != " ":
+            raise ValueError(f"malformed porcelain v1 -z record: {record!r}")
+        status, path = record[:2], record[3:]
+        entries.append((status, path))
+        if "R" in status or "C" in status:
+            if index >= len(tokens) or not tokens[index]:
+                raise ValueError("rename/copy porcelain record is missing its source path")
+            entries.append((status, tokens[index]))
+            index += 1
+    return entries
 
 
 def resolve_commit(target_repo: Path, commit: str) -> tuple[str | None, int]:
@@ -656,12 +683,12 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     doctor_parser = subparsers.add_parser("doctor", help="check ASCS and target repo readiness")
-    doctor_parser.add_argument("--target-repo", default=DEFAULT_TARGET_REPO)
+    doctor_parser.add_argument("--target-repo", required=True)
     doctor_parser.set_defaults(func=command_doctor)
 
     prepare_parser = subparsers.add_parser("prepare-arm", help="create arm branch, set up condition, and record arm_start")
     add_arm_argument(prepare_parser)
-    prepare_parser.add_argument("--target-repo", default=DEFAULT_TARGET_REPO)
+    prepare_parser.add_argument("--target-repo", required=True)
     prepare_parser.add_argument("--base", required=True, help="target repo base commit for this arm")
     prepare_parser.set_defaults(func=command_prepare_arm)
 
