@@ -10,6 +10,6 @@
     "COMPACT_PLUS_PRIMARY_BACKEND": "",
     "COMPACT_PLUS_FALLBACK_BACKEND": ""
   },
-  "_comment_pxpipe": "pxpipe is enabled per-launch, not via settings.json. Start the proxy with 'npx pxpipe-proxy', then launch Claude Code with 'ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'. Read docs/claude-code/pxpipe-safety.md BEFORE enabling. Do NOT put ANTHROPIC_BASE_URL in settings env unless the proxy runs permanently.",
+  "_comment_pxpipe": "pxpipe is enabled per-launch, not via settings.json. Start the reviewed proxy with 'npx -y pxpipe-proxy@0.8.0', then launch Claude Code with 'ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'. Read docs/claude-code/pxpipe-safety.md BEFORE enabling. Do NOT put ANTHROPIC_BASE_URL in settings env unless the proxy runs permanently.",
   "_comment_reminder": "Do not install a statusline that writes the compact-plus warn marker. Without the marker producer, the 60% compact reminder never fires and session-health remains the single compact decider. No other configuration is needed."
 }

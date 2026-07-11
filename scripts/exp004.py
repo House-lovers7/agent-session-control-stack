@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -20,7 +21,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_TARGET_REPO = "/Users/tg/projects/app_development/supabase-rls-guard"
 DEFAULT_SANDBOX_ROOT = "~/projects/_sandbox/ascs-exp004"
 MARKER_BEGIN = "<!-- BEGIN ASCS EXPERIMENT SCAFFOLDING (exp-004) - do not commit -->"
 MARKER_END = "<!-- END ASCS EXPERIMENT SCAFFOLDING (exp-004) -->"
@@ -36,6 +36,7 @@ VOID_CONDITIONS = ("1a", "1b", "2", "3", "4", "5", "6")
 FROZEN_SHARED_SCAFFOLD = (
     "experiments/2026-07-06-claude-code-restart-004-shared-scaffold/.agent-session"
 )
+DISABLED_PUSH_URL = "file:///__ascs_exp004_push_disabled__"
 
 
 @dataclass(frozen=True)
@@ -199,13 +200,84 @@ def ensure_git_worktree(path: Path, label: str) -> int:
 
 
 def ensure_clean(repo: Path) -> int:
-    proc = run_git(repo, ["status", "--porcelain"], capture=True)
+    proc = run_git(
+        repo,
+        ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        capture=True,
+    )
     if proc.returncode != 0:
         return fail(f"could not inspect working tree: {repo}")
-    if proc.stdout.strip():
-        print(proc.stdout, end="", file=sys.stderr)
+    entries = parse_porcelain_z(proc.stdout)
+    if entries:
+        for status, path in entries:
+            print(f"{status} {path}", file=sys.stderr)
         return fail(f"working tree is not clean: {repo}")
     return 0
+
+
+def parse_porcelain_z(output: str) -> list[tuple[str, str]]:
+    """Parse `git status --porcelain=v1 -z`, including rename source paths."""
+    tokens = output.split("\0")
+    entries: list[tuple[str, str]] = []
+    index = 0
+    while index < len(tokens):
+        record = tokens[index]
+        index += 1
+        if not record:
+            continue
+        if len(record) < 4 or record[2] != " ":
+            raise ValueError(f"malformed porcelain v1 -z record: {record!r}")
+        status, path = record[:2], record[3:]
+        entries.append((status, path))
+        if "R" in status or "C" in status:
+            if index >= len(tokens) or not tokens[index]:
+                raise ValueError("rename/copy porcelain record is missing its source path")
+            entries.append((status, tokens[index]))
+            index += 1
+    return entries
+
+
+def disable_push_remotes(checkout: Path) -> int:
+    """Make every cloned remote non-pushable and disable implicit pushes."""
+    remotes_proc = run_git(checkout, ["remote"], capture=True)
+    if remotes_proc.returncode != 0:
+        return fail("could not enumerate experiment remotes")
+    remotes = [line.strip() for line in remotes_proc.stdout.splitlines() if line.strip()]
+    if not remotes:
+        return fail("experiment checkout has no remote to disable")
+    for remote in remotes:
+        proc = run_git(checkout, ["remote", "set-url", "--push", remote, DISABLED_PUSH_URL])
+        if proc.returncode != 0:
+            return fail(f"could not disable push URL for remote {remote}")
+    proc = run_git(checkout, ["config", "push.default", "nothing"])
+    if proc.returncode != 0:
+        return fail("could not disable implicit git push")
+    for remote in remotes:
+        proc = run_git(checkout, ["remote", "get-url", "--push", remote], capture=True)
+        if proc.returncode != 0 or proc.stdout.strip() != DISABLED_PUSH_URL:
+            return fail(f"push URL verification failed for remote {remote}")
+    return 0
+
+
+def prepare_recovery_packet(arm: Arm, checkout: Path, base_hash: str, stage: str) -> str:
+    checkout_arg = shlex.quote(str(checkout))
+    return "\n".join(
+        (
+            "PREPARE RECOVERY (no automatic cleanup performed)",
+            f"arm: {arm.name}",
+            f"failed stage: {stage}",
+            f"requested base: {base_hash}",
+            f"partial checkout: {checkout}",
+            "source repository was not modified by prepare-arm",
+            f"inspect: git -C {checkout_arg} status --short --branch",
+            "after inspection, preserve useful work or remove the partial checkout manually",
+        )
+    )
+
+
+def fail_prepare(arm: Arm, checkout: Path, base_hash: str, stage: str) -> int:
+    print(prepare_recovery_packet(arm, checkout, base_hash, stage), file=sys.stderr)
+    return 1
 
 
 def resolve_commit(repo: Path, commit: str) -> tuple[str | None, int]:
@@ -261,18 +333,190 @@ def run_ascs(args: list[str]) -> int:
     return proc.returncode
 
 
-def record_event(arm: Arm, event_name: str, note: str) -> int:
-    return run_ascs(
-        [
-            "record",
-            "--experiment",
-            arm.experiment_dir,
-            "--event",
-            event_name,
-            "--note",
-            note,
-        ]
+def record_event(
+    arm: Arm,
+    event_name: str,
+    note: str,
+    *,
+    pair_id: str | None = None,
+    condition: str | None = None,
+    transaction_id: str | None = None,
+) -> int:
+    command = [
+        "record",
+        "--experiment",
+        arm.experiment_dir,
+        "--event",
+        event_name,
+        "--note",
+        note,
+    ]
+    for flag, value in (
+        ("--pair-id", pair_id),
+        ("--condition", condition),
+        ("--transaction-id", transaction_id),
+    ):
+        if value is not None:
+            command.extend((flag, value))
+    return run_ascs(command)
+
+
+def event_note_field(event: dict[str, object], field: str) -> str | None:
+    note = str(event.get("note", ""))
+    match = re.search(rf"(?:^|;\s*){re.escape(field)}=([^;]+)", note)
+    return match.group(1).strip() if match else None
+
+
+def transaction_event_ids(
+    arm: Arm, event_name: str, target_event: str | None = None
+) -> set[str]:
+    transaction_ids = set()
+    for event in load_events(arm):
+        if event.get("event") != event_name:
+            continue
+        if target_event is not None and event_note_field(event, "target_event") != target_event:
+            continue
+        transaction_id = event_note_field(event, "txid")
+        if transaction_id:
+            transaction_ids.add(transaction_id)
+    return transaction_ids
+
+
+def arm_has_transaction_stage(
+    arm: Arm, event_name: str, transaction_id: str, target_event: str | None = None
+) -> bool:
+    return transaction_id in transaction_event_ids(arm, event_name, target_event)
+
+
+def transaction_stage_notes(
+    arm: Arm, event_name: str, transaction_id: str, target_event: str | None = None
+) -> list[str]:
+    notes = []
+    for event in load_events(arm):
+        if event.get("event") != event_name:
+            continue
+        if event_note_field(event, "txid") != transaction_id:
+            continue
+        if target_event is not None and event_note_field(event, "target_event") != target_event:
+            continue
+        notes.append(str(event.get("note", "")))
+    return notes
+
+
+def pair_event_committed(pair: str, event_name: str) -> bool:
+    arms = [arm_from_name(name) for name in PAIR_ARMS[pair]]
+    if all(
+        any(
+            event.get("event") == event_name and event_note_field(event, "txid") is None
+            for event in load_events(arm)
+        )
+        for arm in arms
+    ):
+        return True
+
+    committed_ids: set[str] | None = None
+    for arm in arms:
+        arm_ids = transaction_event_ids(arm, event_name)
+        arm_ids &= transaction_event_ids(arm, "pair-event-commit", event_name)
+        committed_ids = arm_ids if committed_ids is None else committed_ids & arm_ids
+    return bool(committed_ids)
+
+
+def pair_event_pending(pair: str, event_name: str) -> bool:
+    arms = [arm_from_name(name) for name in PAIR_ARMS[pair]]
+    untagged = [
+        any(
+            event.get("event") == event_name and event_note_field(event, "txid") is None
+            for event in load_events(arm)
+        )
+        for arm in arms
+    ]
+    if any(untagged) and not all(untagged):
+        return True
+
+    transaction_ids = set()
+    for arm in arms:
+        transaction_ids |= transaction_event_ids(arm, event_name)
+        for stage in ("pair-event-prepare", "pair-event-commit", "pair-event-abort"):
+            transaction_ids |= transaction_event_ids(arm, stage, event_name)
+    for transaction_id in transaction_ids:
+        if not all(
+            arm_has_transaction_stage(arm, event_name, transaction_id)
+            and arm_has_transaction_stage(
+                arm, "pair-event-commit", transaction_id, event_name
+            )
+            for arm in arms
+        ):
+            return True
+    return False
+
+
+def record_pair_event(
+    pair: str, event_name: str, note: str, transaction_id: str
+) -> int:
+    """Idempotently record a pair event with prepare/commit recovery markers."""
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", transaction_id):
+        return fail("pair transaction ID contains unsupported characters")
+    arms = [arm_from_name(name) for name in PAIR_ARMS[pair]]
+    stage_notes = (
+        (
+            "pair-event-prepare",
+            f"txid={transaction_id}; pair={pair}; target_event={event_name}",
+        ),
+        (event_name, f"{note}; txid={transaction_id}"),
+        (
+            "pair-event-commit",
+            f"txid={transaction_id}; pair={pair}; target_event={event_name}",
+        ),
     )
+    for stage_name, stage_note in stage_notes:
+        target_filter = event_name if stage_name.startswith("pair-event-") else None
+        for arm in arms:
+            existing_notes = transaction_stage_notes(
+                arm, stage_name, transaction_id, target_filter
+            )
+            if existing_notes:
+                if any(existing_note != stage_note for existing_note in existing_notes):
+                    return fail(
+                        f"pair transaction payload mismatch for {arm.name}/{stage_name}"
+                    )
+                continue
+            if record_event(
+                arm,
+                stage_name,
+                stage_note,
+                pair_id=pair,
+                condition=arm.condition,
+                transaction_id=transaction_id,
+            ):
+                abort_note = (
+                    f"txid={transaction_id}; pair={pair}; target_event={event_name}; "
+                    f"failed_stage={stage_name}"
+                )
+                for abort_arm in arms:
+                    if not arm_has_transaction_stage(
+                        abort_arm, "pair-event-abort", transaction_id, event_name
+                    ):
+                        if record_event(
+                            abort_arm,
+                            "pair-event-abort",
+                            abort_note,
+                            pair_id=pair,
+                            condition=abort_arm.condition,
+                            transaction_id=transaction_id,
+                        ):
+                            print(
+                                f"WARN could not record abort marker for {abort_arm.name}",
+                                file=sys.stderr,
+                            )
+                print(
+                    "PAIR EVENT RECOVERY: no pair claim is committed; fix the event "
+                    f"writer and retry the same command (txid={transaction_id})",
+                    file=sys.stderr,
+                )
+                return 1
+    print(f"PASS committed pair event {event_name} ({transaction_id})")
+    return 0
 
 
 def sha256_file(path: Path) -> str:
@@ -293,10 +537,6 @@ def scaffold_tree_hash(root: Path) -> str:
     file_hashes = scaffold_file_hashes(root)
     payload = json.dumps(file_hashes, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
-
-
-def global_claude_checksum() -> str:
-    return sha256_file(Path("~/.claude/CLAUDE.md").expanduser())
 
 
 def maybe_project_state_warning(checkout: Path) -> str:
@@ -390,24 +630,13 @@ def verify_treated_setup(checkout: Path) -> int:
     return 0
 
 
-def treated_scaffold_evidence(checkout: Path) -> str:
-    source_hash = scaffold_tree_hash(frozen_shared_scaffold_path())
-    dest_hash = scaffold_tree_hash(checkout / ".agent-session")
-    return (
-        f"frozen scaffold tree sha256: {source_hash}; "
-        f"copied .agent-session tree sha256: {dest_hash}; "
-        f"scaffold hashes match: {str(source_hash == dest_hash).lower()}"
-    )
-
-
 def isolation_setup_note(arm: Arm, checkout: Path, base_hash: str) -> str:
     note = (
-        f"isolation-setup; checkout: {checkout}; base commit: {base_hash}; "
-        f"global CLAUDE.md sha256: {global_claude_checksum()}; "
-        f"project-state: {maybe_project_state_warning(checkout)}"
+        f"isolation-setup; checkout_id: {arm.name}; base commit: {base_hash}; "
+        "machine path and environment fingerprints omitted"
     )
     if arm.condition == "treated":
-        note += "; " + treated_scaffold_evidence(checkout)
+        note += "; frozen and copied scaffolds verified equal locally; hashes omitted"
     return note
 
 
@@ -454,15 +683,41 @@ Done definition:
 
 
 def changed_files(checkout: Path) -> list[str]:
-    proc = run_git(checkout, ["status", "--porcelain", "-uall"], capture=True)
+    proc = run_git(
+        checkout,
+        ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        capture=True,
+    )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr or "git status failed")
-    files: list[str] = []
-    for line in proc.stdout.splitlines():
-        if not line.strip():
-            continue
-        files.append(line[3:].strip())
-    return files
+    return list(dict.fromkeys(path for _status, path in parse_porcelain_z(proc.stdout)))
+
+
+def committed_scaffold_contamination(checkout: Path, base_hash: str) -> list[str]:
+    contaminated: list[str] = []
+    state_proc = run_git(
+        checkout,
+        ["diff", "--name-only", "-z", f"{base_hash}..HEAD", "--", ".agent-session"],
+        capture=True,
+    )
+    if state_proc.returncode != 0:
+        raise RuntimeError(state_proc.stderr or "git diff for committed state failed")
+    contaminated.extend(path for path in state_proc.stdout.split("\0") if path)
+
+    claude_diff = run_git(
+        checkout,
+        ["diff", "--name-only", "-z", f"{base_hash}..HEAD", "--", "CLAUDE.md"],
+        capture=True,
+    )
+    if claude_diff.returncode != 0:
+        raise RuntimeError(claude_diff.stderr or "git diff for committed CLAUDE.md failed")
+    if claude_diff.stdout.strip("\0"):
+        content_proc = run_git(checkout, ["show", "HEAD:CLAUDE.md"], capture=True)
+        if content_proc.returncode == 0 and (
+            MARKER_BEGIN in content_proc.stdout or MARKER_END in content_proc.stdout
+        ):
+            contaminated.append("CLAUDE.md (exp-004 marker)")
+    return contaminated
 
 
 def is_test_file(path: str) -> bool:
@@ -489,6 +744,15 @@ def checkpoint_signature(arm: Arm, checkout: Path) -> tuple[dict[str, object] | 
     if head_proc.returncode != 0:
         return None, fail("could not resolve HEAD")
     head = head_proc.stdout.strip()
+    try:
+        committed_contamination = committed_scaffold_contamination(checkout, base_hash)
+    except RuntimeError as exc:
+        return None, fail(str(exc))
+    if committed_contamination:
+        return None, fail(
+            "C1 failed: experiment scaffolding was committed: "
+            + ", ".join(committed_contamination)
+        )
     count_proc = run_git(checkout, ["rev-list", "--count", f"{base_hash}..HEAD"], capture=True)
     if count_proc.returncode != 0:
         return None, fail(f"could not compare base {base_hash} to HEAD")
@@ -558,29 +822,37 @@ def command_prepare_arm(args: argparse.Namespace) -> int:
     checkout = checkout_path(arm, root)
     if checkout.exists():
         return fail(f"checkout already exists: {checkout}")
-    checkout.parent.mkdir(parents=True, exist_ok=False)
+    try:
+        checkout.parent.mkdir(parents=True, exist_ok=False)
+    except OSError:
+        return fail_prepare(arm, checkout, base_hash, "create-sandbox-directory")
     proc = run_cmd(["git", "clone", "--no-checkout", str(source_repo), str(checkout)], ascs_root())
     if not require_success(proc, f"git clone --no-checkout {source_repo} {checkout}"):
-        return 1
+        return fail_prepare(arm, checkout, base_hash, "clone")
+    if disable_push_remotes(checkout):
+        return fail_prepare(arm, checkout, base_hash, "disable-push")
     proc = run_git(checkout, ["switch", "-c", arm.branch, base_hash])
     if not require_success(proc, f"git switch -c {arm.branch} {base_hash}"):
-        return 1
+        return fail_prepare(arm, checkout, base_hash, "switch-branch")
 
-    if arm.condition == "baseline":
-        if verify_baseline_setup(checkout):
-            return 1
-    else:
-        if setup_treated(checkout):
-            return 1
+    try:
+        if arm.condition == "baseline":
+            if verify_baseline_setup(checkout):
+                return fail_prepare(arm, checkout, base_hash, "verify-baseline")
+        else:
+            if setup_treated(checkout):
+                return fail_prepare(arm, checkout, base_hash, "setup-treated")
+    except (OSError, UnicodeError, shutil.Error):
+        return fail_prepare(arm, checkout, base_hash, "configure-arm")
 
     if record_event(arm, "isolation-setup", isolation_setup_note(arm, checkout, base_hash)):
-        return 1
+        return fail_prepare(arm, checkout, base_hash, "record-isolation-setup")
     arm_start_note = (
         f"arm_start; condition: {arm.condition}; task: {arm.task}; "
-        f"branch: {arm.branch}; base commit: {base_hash}; checkout: {checkout}"
+        f"branch: {arm.branch}; base commit: {base_hash}; checkout_id: {arm.name}"
     )
     if record_event(arm, "arm_start", arm_start_note):
-        return 1
+        return fail_prepare(arm, checkout, base_hash, "record-arm-start")
     print(build_prompt(arm, "first"), end="")
     return 0
 
@@ -624,11 +896,12 @@ def command_verify_pair_checkpoint(args: argparse.Namespace) -> int:
     note = f"pair-checkpoint-audit; pair={args.pair}; scope_differs={args.scope_differs}"
     if args.scope_differs:
         note += "; operator judged scope materially different; pair should be void condition 3"
-    for arm in arms:
-        if record_event(arm, "pair-checkpoint-audit", note):
-            return 1
-    print("PASS pair checkpoint audit recorded")
-    return 0
+    return record_pair_event(
+        args.pair,
+        "pair-checkpoint-audit",
+        note,
+        f"exp004-pair-{args.pair}-checkpoint-audit",
+    )
 
 
 def command_print_prompt(args: argparse.Namespace) -> int:
@@ -640,8 +913,8 @@ def command_record_resume_start(args: argparse.Namespace) -> int:
     arm = arm_from_name(args.arm)
     if not has_event(arm, "interruption_reached"):
         return fail(f"{arm.name} has no interruption_reached event")
-    if not has_event(arm, "pair-checkpoint-audit"):
-        return fail(f"{arm.name} has no pair-checkpoint-audit event")
+    if not pair_event_committed(arm.pair, "pair-checkpoint-audit"):
+        return fail(f"pair {arm.pair} has no committed pair-checkpoint-audit event")
     if has_event(arm, "first-progress-edit"):
         return fail(f"{arm.name} already has first-progress-edit")
     if has_event(arm, "resume-start") and last_event_name(arm) != "resume-attempt-aborted":
@@ -735,9 +1008,10 @@ def command_pair_verdict(args: argparse.Namespace) -> int:
     left_name, right_name = PAIR_ARMS[args.pair]
     left = arm_from_name(left_name)
     right = arm_from_name(right_name)
-    for arm in (left, right):
-        if has_event(arm, "void-pair"):
-            return fail(f"{arm.name} has a void-pair event; no verdict arithmetic allowed")
+    if pair_event_committed(args.pair, "void-pair"):
+        return fail(f"pair {args.pair} has a committed void-pair event; no verdict arithmetic allowed")
+    if pair_event_pending(args.pair, "void-pair"):
+        return fail(f"pair {args.pair} has a pending void-pair transaction; recover it first")
     left_metrics = metrics_for_arm(left)
     right_metrics = metrics_for_arm(right)
     left_tuple = verdict_tuple(left_metrics)
@@ -753,11 +1027,15 @@ def command_pair_verdict(args: argparse.Namespace) -> int:
         f"{left.name}={left_tuple}; {right.name}={right_tuple}; "
         "resume_time_seconds=reported only"
     )
-    for arm in (left, right):
-        if record_event(arm, "pair-verdict", note):
-            return 1
-    print(note)
-    return 0
+    status = record_pair_event(
+        args.pair,
+        "pair-verdict",
+        note,
+        f"exp004-pair-{args.pair}-verdict",
+    )
+    if status == 0:
+        print(note)
+    return status
 
 
 def pair_winner(pair: str) -> str:
@@ -773,12 +1051,13 @@ def pair_winner(pair: str) -> str:
 
 
 def command_claim_check(args: argparse.Namespace) -> int:
-    for arm in ARMS.values():
-        if has_event(arm, "void-pair"):
-            return fail("a void-pair event exists; Experiment 004 closes without Layer 3 claim")
-    for pair, names in PAIR_ARMS.items():
-        if not all(has_event(arm_from_name(name), "pair-verdict") for name in names):
-            return fail(f"pair {pair} has no complete pair-verdict events")
+    for pair in PAIR_ARMS:
+        if pair_event_pending(pair, "void-pair") or pair_event_pending(pair, "pair-verdict"):
+            return fail(f"pair {pair} has a pending pair transaction; recover it before claims")
+        if pair_event_committed(pair, "void-pair"):
+            return fail("a committed void-pair event exists; Experiment 004 closes without Layer 3 claim")
+        if not pair_event_committed(pair, "pair-verdict"):
+            return fail(f"pair {pair} has no committed pair-verdict transaction")
     winners = (pair_winner("1"), pair_winner("2"))
     print(f"Pair winners: {winners[0]}, {winners[1]}")
     if winners == ("treated", "treated"):
@@ -792,12 +1071,12 @@ def command_claim_check(args: argparse.Namespace) -> int:
 
 
 def command_record_void_pair(args: argparse.Namespace) -> int:
-    for name in PAIR_ARMS[args.pair]:
-        arm = arm_from_name(name)
-        if record_event(arm, "void-pair", f"condition={args.condition}; note={args.note}"):
-            return 1
-    print(f"PASS void-pair recorded for pair {args.pair}")
-    return 0
+    return record_pair_event(
+        args.pair,
+        "void-pair",
+        f"condition={args.condition}; note={args.note}",
+        f"exp004-pair-{args.pair}-void",
+    )
 
 
 def command_status(args: argparse.Namespace) -> int:
@@ -823,13 +1102,13 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     doctor_parser = subparsers.add_parser("doctor")
-    doctor_parser.add_argument("--target-repo", default=DEFAULT_TARGET_REPO)
+    doctor_parser.add_argument("--target-repo", required=True)
     doctor_parser.add_argument("--sandbox-root", default=DEFAULT_SANDBOX_ROOT)
     doctor_parser.set_defaults(func=command_doctor)
 
     prepare_parser = subparsers.add_parser("prepare-arm")
     add_arm_argument(prepare_parser)
-    prepare_parser.add_argument("--target-repo", default=DEFAULT_TARGET_REPO)
+    prepare_parser.add_argument("--target-repo", required=True)
     prepare_parser.add_argument("--sandbox-root", default=DEFAULT_SANDBOX_ROOT)
     prepare_parser.add_argument("--base", required=True)
     prepare_parser.set_defaults(func=command_prepare_arm)

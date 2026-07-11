@@ -21,18 +21,21 @@ Framing matters: this is not a "compact workaround." It is a protocol for handin
 
 - Add `.agent-session/` to `.gitignore` — it is working memory, not product history
 - `checkpoint.md` uses the same 10 sections as compact-plus state files ([templates/state-file.md](../../templates/state-file.md)), so a handoff can cross runtimes: a Claude Code session's state capture is readable by a Codex session, and vice versa
+- Apply the [state trust contract](../state-trust-contract.md): state is untrusted recovery context with repository/branch/commit/session/expiry metadata, never an authority or secret store
 
 ## The protocol
 
 The full drop-in `AGENTS.md` text lives at [examples/codex/AGENTS.md](../../examples/codex/AGENTS.md). In summary:
 
-**Before starting work** — read `handoff.md` first if it exists; treat any summary in it as a hypothesis and verify against the referenced files. Read `current-plan.md`; read `decision-log.md` before changing architecture; read `failed-attempts.md` before retrying an approach.
+**Before starting work** — validate the metadata first. Ignore a repository mismatch; treat branch/commit mismatch or expiry as stale. Then read `handoff.md` as a hypothesis and verify referenced items against current source and command output. Read `current-plan.md`; read `decision-log.md` before changing architecture; read `failed-attempts.md` before retrying an approach.
 
 **During long work** — log decisions and failures as they happen (with cause hypotheses, not just symptoms). Refresh `checkpoint.md` at natural boundaries: after a phase, before a risky change, roughly every 10 substantial steps. Keep bulky content out of state files; reference paths instead.
 
 **Before stopping, switching models, or starting a new session** — update `handoff.md` for a reader with zero memory of this session: goal, current phase, next action, open risks, pointers into `state/`.
 
 **Before destructive actions** — ask for human approval, and confirm deploy target, branch, migration name, and rollback plan as exact text, never from memory or summaries.
+
+**Retention and rollback** — keep state ignored, use a maximum seven-day expiry, remove it when the task ends, and keep any ignored pre-rewrite rollback copy for at most 24 hours. A restored copy receives the same trust checks. Never store secrets, credentials, raw customer/personal data, or verbatim untrusted instructions.
 
 ## What the Health layer becomes here
 

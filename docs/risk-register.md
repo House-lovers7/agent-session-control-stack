@@ -13,11 +13,11 @@
 | R5 | **Codex protocol の不遵守**: Codex binding は hook でなくエージェントの AGENTS.md 遵守に依存する。checkpoint を書かずに突き進む可能性 | 中（Codex 側だけ保全が効かない） | [中] 一般にモデルの指示遵守は確率的 | Phase 2 で遵守率を測定。低ければ Skills 化 → wrapper（Phase 2+）で強制点を作る |
 | R6 | **pxpipe × compact-plus の相互作用が未測定**: transcript はローカルで原文のまま書かれるため backup / state 生成への影響は無いはず、という推定に留まる | 低〜中 | [中] pxpipe が触るのは送信リクエストのみ、という仕様からの推定 | Phase 2 で併用セッションを最低 1 本含め、state file の品質を目視確認 |
 | R7 | **PostCompact hook の挙動詳細が未確認**: compact-plus の recovery は PostCompact の発火に依存。発火条件の細部（auto compact 時等）は plugin 資料からは未確認 | 低 | [中] | Phase 2 で auto / manual compact 両方の recovery 発火を確認 |
-| R8 | **既存 OSS の更新で本 repo の記述が陳腐化**: meta-repo の宿命 | 低（誤案内） | [高] 構造的に必然 | 各記述に確認日（2026-07-05）を残す。upstream の breaking change を ROADMAP 定期確認に含める |
+| R8 | **既存 OSS の更新で本 repo の記述が陳腐化**: meta-repo の宿命 | 低（誤案内） | [高] 構造的に必然 | 2026-07-10確認のimmutable version/SHA/integrityを `config/upstreams.lock.json` に固定。lock・marketplace・運用コマンドの一致をCIで必須化し、更新はHuman Approval Gateを通す |
 
 ## 2. 未検証点（明示）
 
-1. **Codex CLI に pxpipe 相当を透過的に挟めるか** — 未検証。GPT path の tool 定義は native JSON・`cache_control` 非使用という README 記述はあるが、Codex CLI の接続経路・認証・互換性は確認していない。Phase 0 では Compression 層を Codex に移植しない判断
+1. **Codex CLI に pxpipe 相当を安全に挟めるか** — pxpipe-proxy 0.8.0 が OpenAI Responses transport を実装することはsource確認済みだが、Codex CLIの接続経路・認証・tool挙動・byte-exact safetyのend-to-end互換性は未検証。transport実装の存在だけでstable対応とは扱わず、Compression層をCodex stable bindingへ移植しない
 2. **Codex で Claude Code 並みの Checkpoint/Recovery がどこまで再現できるか** — protocol 遵守率は測定するまで不明
 3. **3 層併用の相乗効果** — 各ツールの個別実測（pxpipe: 請求 59〜70% 減、session-health: compact でセッション内中央値 66% 削減・正規化比 233x→83x — いずれも作者が因果ではなく整合性の証拠と明記）はあるが、**併用時の合算効果・干渉は未測定**
 4. **使用量上限（使用率表示）への効果** — 上限の算定は入力トークンだけで決まるとは限らない。「pxpipe で 70% 削減 = 使用率も 70% 改善」とは言えない

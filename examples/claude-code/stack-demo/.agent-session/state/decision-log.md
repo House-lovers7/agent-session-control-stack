@@ -1,4 +1,13 @@
 <!-- Fictional example for the stack demo - not a real session record. -->
+<!-- ascs-state-metadata
+state_schema_version: 1
+repository: example/beacon-board
+branch: feature/triage-filter
+commit: 1111111111111111111111111111111111111111
+session_id: demo-session-002
+updated_at: 2026-07-10T00:00:00+00:00
+expires_at: 2026-07-17T00:00:00+00:00
+-->
 # Decision Log
 
 ---
@@ -9,8 +18,8 @@
 - **Decision**: Store filter logic against explicit status keys and keep display labels separate.
 - **Options considered**:
   - Display labels such as "Waiting on customer" - rejected because label copy may change and should not alter filtering behavior.
-  - Stable keys such as `waiting_on_customer` and `unassigned` - **chosen** because they are byte-exact values that can be verified from state files before editing.
-- **Constraints that drove it**: The restart protocol requires exact values to come from disk, not from summaries or memory.
+  - Stable keys such as `waiting_on_customer` and `unassigned` - **chosen** because they can be re-read from typed product source before editing.
+- **Constraints that drove it**: The restart protocol treats state as a hint and requires exact values to come from current authoritative source, not summaries or memory.
 - **Revisit if**: The fictional app grows a typed enum source that becomes the single authority for status keys.
 
 ---

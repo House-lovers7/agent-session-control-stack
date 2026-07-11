@@ -728,6 +728,75 @@ def event_notes(events: list[dict[str, Any]], event_name: str) -> list[str]:
     return [str(event.get("note", "")) for event in events if event.get("event") == event_name]
 
 
+def event_note_field(event: dict[str, Any], field: str) -> str | None:
+    note = str(event.get("note", ""))
+    match = re.search(rf"(?:^|;\s*){re.escape(field)}=([^;]+)", note)
+    return match.group(1).strip() if match else None
+
+
+def transaction_ids(
+    events: list[dict[str, Any]], event_name: str, target_event: str | None = None
+) -> set[str]:
+    result = set()
+    for event in events:
+        if event.get("event") != event_name:
+            continue
+        if target_event is not None and event_note_field(event, "target_event") != target_event:
+            continue
+        transaction_id = event_note_field(event, "txid")
+        if transaction_id:
+            result.add(transaction_id)
+    return result
+
+
+def has_committed_pair_event(
+    arm_events: dict[str, list[dict[str, Any]]], event_name: str
+) -> bool:
+    if all(
+        any(
+            event.get("event") == event_name and event_note_field(event, "txid") is None
+            for event in events
+        )
+        for events in arm_events.values()
+    ):
+        return True
+    committed_ids: set[str] | None = None
+    for events in arm_events.values():
+        arm_ids = transaction_ids(events, event_name)
+        arm_ids &= transaction_ids(events, "pair-event-commit", event_name)
+        committed_ids = arm_ids if committed_ids is None else committed_ids & arm_ids
+    return bool(committed_ids)
+
+
+def has_pending_pair_event(
+    arm_events: dict[str, list[dict[str, Any]]], event_name: str
+) -> bool:
+    untagged = [
+        any(
+            event.get("event") == event_name and event_note_field(event, "txid") is None
+            for event in events
+        )
+        for events in arm_events.values()
+    ]
+    if any(untagged) and not all(untagged):
+        return True
+    all_ids = set()
+    for events in arm_events.values():
+        all_ids |= transaction_ids(events, event_name)
+        for stage in ("pair-event-prepare", "pair-event-commit", "pair-event-abort"):
+            all_ids |= transaction_ids(events, stage, event_name)
+    for transaction_id in all_ids:
+        if not all(
+            transaction_id in transaction_ids(events, event_name)
+            and transaction_id in transaction_ids(
+                events, "pair-event-commit", event_name
+            )
+            for events in arm_events.values()
+        ):
+            return True
+    return False
+
+
 def void_condition(events: list[dict[str, Any]]) -> str | None:
     for note in event_notes(events, "void-pair"):
         match = re.search(r"\bcondition=([^;\s]+)", note)
@@ -820,6 +889,8 @@ def pair_verdict(pair: str, arm_events: dict[str, list[dict[str, Any]]]) -> dict
     conditions = {arm: arm_condition(arm, events) for arm, events in arm_events.items()}
     valid_arm_shape = len(arm_events) == 2 and set(conditions.values()) == {"baseline", "treated"}
     failing_counts = {arm: failing_count(events) for arm, events in arm_events.items()}
+    verdict_committed = has_committed_pair_event(arm_events, "pair-verdict")
+    verdict_pending = has_pending_pair_event(arm_events, "pair-verdict")
     resume_time = {}
     for arm, events in arm_events.items():
         seconds, detail = derive_resume_time_from_events(events, allow_legacy=True)
@@ -857,6 +928,12 @@ def pair_verdict(pair: str, arm_events: dict[str, list[dict[str, Any]]]) -> dict
         status = "INCOMPLETE"
         claim_boundary = "incomplete pair; no comparison"
         reasons.append(f"Pair {pair} did not reach the interruption checkpoint in both arms.")
+    elif verdict_pending:
+        status = "INCOMPLETE"
+        claim_boundary = "pending pair-verdict transaction; no comparison"
+        reasons.append(
+            f"Pair {pair} has an uncommitted pair-verdict transaction; retry or recover it before claims."
+        )
     else:
         signatures = {}
         verdict_errors = []
@@ -875,7 +952,8 @@ def pair_verdict(pair: str, arm_events: dict[str, list[dict[str, Any]]]) -> dict
             if error:
                 verdict_errors.append(f"{arm}: {error}")
         coherent = (
-            not verdict_errors
+            verdict_committed
+            and not verdict_errors
             and all(signature for signature in signatures.values())
             and len(set(signatures.values())) == 1
         )

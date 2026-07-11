@@ -29,7 +29,7 @@ Keep as text:
 
 ## The limitation you must know before relying on this list
 
-**You cannot enforce the list above through pxpipe configuration when running it via `npx`.** Per-category toggles (e.g., "compress tool results but not reminders") exist in the library's `TransformOptions`, but the proxy/CLI layer does not expose them. Verified against upstream source on 2026-07-05.
+**You cannot enforce the list above through pxpipe configuration when running it via `npx`.** Per-category toggles (e.g., "compress tool results but not reminders") exist in the library's `TransformOptions`, but the proxy/CLI layer does not expose them. Verified against locked upstream 0.8.0 source on 2026-07-10; see [upstream compatibility](../upstream-compatibility.md).
 
 The controls you actually have:
 

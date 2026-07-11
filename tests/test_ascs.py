@@ -582,6 +582,61 @@ class TestEvidenceBoundaries(unittest.TestCase):
 
 
 class TestComputeClaimVerdict(unittest.TestCase):
+    def test_uncommitted_pair_verdict_transaction_never_becomes_valid(self):
+        transaction_id = "exp004-pair-1-verdict"
+        prepare = ev(
+            "pair-event-prepare",
+            f"txid={transaction_id}; pair=1; target_event=pair-verdict",
+        )
+        verdict = ev("pair-verdict", f"winner=tie; txid={transaction_id}")
+        one_commit = ev(
+            "pair-event-commit",
+            f"txid={transaction_id}; pair=1; target_event=pair-verdict",
+        )
+        evidence = pure_evidence(
+            [
+                {
+                    "pair": "1",
+                    "arm_events": {
+                        "run-p1-baseline": checkpointed_arm(2) + [prepare, verdict, one_commit],
+                        "run-p1-treated": checkpointed_arm(2) + [prepare, verdict],
+                    },
+                }
+            ],
+            closeout=False,
+        )
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
+        pair = result["pair_statuses"][0]
+        self.assertEqual(pair["status"], "INCOMPLETE")
+        self.assertIn("pending pair-verdict transaction", pair["claim_boundary"])
+
+    def test_committed_pair_verdict_transaction_is_valid(self):
+        transaction_id = "exp004-pair-1-verdict"
+        prepare = ev(
+            "pair-event-prepare",
+            f"txid={transaction_id}; pair=1; target_event=pair-verdict",
+        )
+        verdict = ev("pair-verdict", f"winner=tie; txid={transaction_id}")
+        commit = ev(
+            "pair-event-commit",
+            f"txid={transaction_id}; pair=1; target_event=pair-verdict",
+        )
+        arm = checkpointed_arm(2) + [prepare, verdict, commit]
+        evidence = pure_evidence(
+            [
+                {
+                    "pair": "1",
+                    "arm_events": {
+                        "run-p1-baseline": arm,
+                        "run-p1-treated": list(arm),
+                    },
+                }
+            ],
+            closeout=False,
+        )
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
+        self.assertEqual(result["pair_statuses"][0]["status"], "VALID COMPARISON")
+
     def test_void_pair_blocks_treated_vs_baseline_claims(self):
         void = ev("void-pair", "condition=3; note=scope audit")
         evidence = pure_evidence([
