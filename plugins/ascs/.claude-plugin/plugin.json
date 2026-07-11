@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "ascs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Read-only doctor for the Agent Session Control Stack (pxpipe + session-health + compact-plus composition). Injects no context, registers no hooks, writes nothing.",
   "author": {
     "name": "Taisuke Goto (House-lovers7)"
