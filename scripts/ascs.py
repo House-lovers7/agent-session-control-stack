@@ -48,7 +48,17 @@ EXPERIMENT_004_METRIC_KEYS = [
 
 GATE_PROFILE_DEFAULT = "default"
 GATE_PROFILE_EXPERIMENT_004 = "experiment-004"
-GATE_PROFILES = (GATE_PROFILE_DEFAULT, GATE_PROFILE_EXPERIMENT_004)
+GATE_PROFILE_EXPERIMENT_005 = "experiment-005"
+GATE_PROFILES = (
+    GATE_PROFILE_DEFAULT,
+    GATE_PROFILE_EXPERIMENT_004,
+    GATE_PROFILE_EXPERIMENT_005,
+)
+# Profiles that apply no absolute per-arm gate: metrics are reported only and
+# comparisons happen through the experiment helper's pair-verdict command.
+REPORTED_ONLY_GATE_PROFILES = frozenset(
+    {GATE_PROFILE_EXPERIMENT_004, GATE_PROFILE_EXPERIMENT_005}
+)
 
 # Reported for comparison, never gated on. Optional so that experiments
 # recorded before it existed (001, 002) still score.
@@ -593,19 +603,21 @@ def status_for_metrics(
 ) -> dict[str, Any]:
     required = (
         EXPERIMENT_004_METRIC_KEYS
-        if gate_profile == GATE_PROFILE_EXPERIMENT_004
+        if gate_profile in REPORTED_ONLY_GATE_PROFILES
         else METRIC_KEYS
     )
     for key in required:
         if key == "missed_state_files" and metrics.get(key) == "n/a":
-            if gate_profile != GATE_PROFILE_EXPERIMENT_004:
-                raise ValueError("missed_state_files=n/a is only valid for experiment-004")
+            if gate_profile not in REPORTED_ONLY_GATE_PROFILES:
+                raise ValueError(
+                    "missed_state_files=n/a is only valid for experiment-004/005"
+                )
             continue
         metric_as_int(metrics, key)
     if "recovery_quality" in metrics and metric_as_int(metrics, "recovery_quality") > 4:
         raise ValueError("recovery_quality must be between 0 and 4")
 
-    if gate_profile == GATE_PROFILE_EXPERIMENT_004:
+    if gate_profile in REPORTED_ONLY_GATE_PROFILES:
         return {
             "status": "REPORTED_ONLY",
             "failed_criteria": [],
@@ -1675,7 +1687,8 @@ def finish_experiment(args: argparse.Namespace) -> int:
 
     if gate_profile == GATE_PROFILE_DEFAULT and args.missed_state_files == "n/a":
         print(
-            "FAIL --missed-state-files n/a is only valid with --gate-profile experiment-004",
+            "FAIL --missed-state-files n/a is only valid with --gate-profile "
+            "experiment-004 or experiment-005",
             file=sys.stderr,
         )
         return 1
@@ -1688,12 +1701,12 @@ def finish_experiment(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    if gate_profile == GATE_PROFILE_EXPERIMENT_004 and (
+    if gate_profile in REPORTED_ONLY_GATE_PROFILES and (
         args.missed_checkpoint_items is None or args.recovery_quality is None
     ):
         print(
             "FAIL --missed-checkpoint-items and --recovery-quality are required "
-            "with --gate-profile experiment-004",
+            f"with --gate-profile {gate_profile}",
             file=sys.stderr,
         )
         return 1
@@ -1744,7 +1757,7 @@ def score_experiment(args: argparse.Namespace) -> int:
         return 1
     required_keys = (
         EXPERIMENT_004_METRIC_KEYS
-        if gate_profile == GATE_PROFILE_EXPERIMENT_004
+        if gate_profile in REPORTED_ONLY_GATE_PROFILES
         else METRIC_KEYS
     )
     missing = [key for key in required_keys if key not in metrics]
@@ -1772,7 +1785,7 @@ def score_experiment(args: argparse.Namespace) -> int:
 
     print("| Metric | Value | Criterion |")
     print("|---|---:|---|")
-    if gate_profile == GATE_PROFILE_EXPERIMENT_004:
+    if gate_profile in REPORTED_ONLY_GATE_PROFILES:
         print(f"| missed_checkpoint_items | {typed_metrics['missed_checkpoint_items']} | reported only; pair-verdict compares |")
         print(f"| human_corrections | {typed_metrics['human_corrections']} | reported only; pair-verdict compares |")
         print(f"| recovery_quality | {typed_metrics['recovery_quality']} | reported only; pair-verdict compares |")
@@ -1784,7 +1797,7 @@ def score_experiment(args: argparse.Namespace) -> int:
         print(f"| rejected_option_relapses | {typed_metrics['rejected_option_relapses']} | must be 0 |")
         print(f"| human_corrections | {typed_metrics['human_corrections']} | must be <= 1 |")
         print(f"| resume_time_seconds | {typed_metrics['resume_time_seconds']} | reported only |")
-    if "recovery_quality" in metrics and gate_profile != GATE_PROFILE_EXPERIMENT_004:
+    if "recovery_quality" in metrics and gate_profile not in REPORTED_ONLY_GATE_PROFILES:
         print(f"| recovery_quality | {recovery_quality} | reported only (0-4) |")
     print("")
     print(f"Score: **{score['status']}**")

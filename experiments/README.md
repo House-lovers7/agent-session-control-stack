@@ -29,6 +29,7 @@ validate the full composition effect of pxpipe + session-health + compact-plus.
 | `2026-07-06-claude-code-restart-004-p1-treated/` | Experiment 004, Pair 1 treated arm — started with the frozen `.agent-session` scaffold and reached checkpoint shape; Pair 1 later voided condition 3. |
 | `2026-07-06-claude-code-restart-004-p2-treated/` | Experiment 004, Pair 2 treated arm — preregistered only; not run before closeout. |
 | `2026-07-06-claude-code-restart-004-p2-baseline/` | Experiment 004, Pair 2 baseline arm — preregistered only; not run before closeout. |
+| `2026-07-11-claude-code-restart-005-shared-scaffold/` | **Experiment 005 shared scaffold** — the frozen neutral `.agent-session/` scaffold for 005 treated arms (the 004 scaffold, inherited unchanged). Experiment 005 is **design-registered but not yet pre-registered**: see [docs/experiment-005-design.md](../docs/experiment-005-design.md). No arm directories exist yet — they are created at pre-registration, immediately before the run window. |
 
 Timezone convention for all `events.jsonl` files: event `timestamp` fields and
 any clock times inside new `note` strings are UTC. Historical files remain
@@ -48,11 +49,14 @@ Experiment 003 ([design](../docs/experiment-003-design.md)) was **closed on
 2026-07-06 without obtaining a resume comparison** — its
 naturally-occurring-failure interruption precondition never fired in two
 consecutive attempts (see the
-[closeout summary](2026-07-06-codex-handoff-003-summary.md)). The next
-experiment will use a **new experiment number** and interrupt
-unconditionally at a pre-registered checkpoint shared by both arms; its
-design is not yet registered. The recording rules below (event-derived
-timing, UTC, pre-registration before work) carry over unchanged.
+[closeout summary](2026-07-06-codex-handoff-003-summary.md)). Experiment 004
+fixed that with an unconditional pre-registered checkpoint but closed
+without a recovery comparison (see its closeout above). The next attempt is
+**Experiment 005** ([design draft](../docs/experiment-005-design.md)):
+Opus as the standard runtime, runtime conditions standardized and recorded
+per arm, and a material-difference note required for any `scope_differs`
+judgment. The recording rules below (event-derived timing, UTC,
+pre-registration before work) carry over unchanged.
 
 One before/after comparison = **two experiment directories** on the same kind
 of real task (no synthetic tasks), one per condition:
