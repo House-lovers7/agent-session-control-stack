@@ -90,7 +90,7 @@ expires_at: {expires}
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(result["issues"], [])
 
-    def test_utc_z_times_are_supported_on_python_39(self):
+    def test_utc_z_times_are_supported(self):
         self.write_state(
             updated="2026-07-10T00:00:00Z",
             expires="2026-07-17T00:00:00Z",
