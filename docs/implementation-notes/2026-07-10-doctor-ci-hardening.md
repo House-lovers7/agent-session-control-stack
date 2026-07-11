@@ -13,9 +13,15 @@
 - Treat a loopback TCP connection as port availability only. The doctor never claims that the listener is pxpipe without an identity protocol.
 - Parse and redact `ANTHROPIC_BASE_URL`; never echo the environment value verbatim.
 - Resolve known `statusLine` deep-merge precedence, additive hook producers, managed drop-ins, and `disableAllHooks` across user, project, project-local, and file-managed settings. Stale marker files alone are warnings.
-- Pin GitHub-maintained Actions to the verified commits behind their reviewed major tags, remove checkout credentials, and test Python 3.9 plus 3.12.
+- Pin GitHub-maintained Actions to the verified commits behind their reviewed major tags, remove checkout credentials, and test the oldest supported runtime with sufficient security runway (Python 3.11) plus the current stable runtime (Python 3.14).
 
 ## Deviations
+
+- What: The post-implementation blindspot pass replaced Python 3.9/3.12 CI with Python 3.11/3.14.
+  Why: Python 3.9 reached end of life on 2025-10-31 and no longer receives security updates. Python 3.11 is the oldest supported branch with more than a year of remaining security coverage, while Python 3.14 is the current stable branch as of 2026-07-11.
+  Choice: Test 3.11 and 3.14 so CI covers a supported lower bound and the current stable interpreter without adding redundant matrix latency.
+  Reconsider: when Python 3.11 approaches its 2027-10 end of life, advance the lower bound in a reviewed maintenance change.
+  Source: https://devguide.python.org/versions/
 
 - What: Upstream-lock validation is implemented but is optional in this PR.
   Why: The reviewed lock and consumer pins belong to Issue #6 and do not exist on `main` yet; requiring a missing lock would make this PR's CI permanently fail.
