@@ -30,8 +30,10 @@ validate the full composition effect of pxpipe + session-health + compact-plus.
 | `2026-07-06-claude-code-restart-004-p2-treated/` | Experiment 004, Pair 2 treated arm — preregistered only; not run before closeout. |
 | `2026-07-06-claude-code-restart-004-p2-baseline/` | Experiment 004, Pair 2 baseline arm — preregistered only; not run before closeout. |
 
-Timezone convention for all `events.jsonl` files: event `timestamp` fields
-are UTC; clock times inside `note` strings are JST (UTC+9).
+Timezone convention for all `events.jsonl` files: event `timestamp` fields and
+any clock times inside new `note` strings are UTC. Historical files remain
+unchanged. New events carry `schema_version: 1`; historical events without the
+field are read only through the harness's explicit legacy compatibility path.
 
 Stronger Phase 2 evidence requires more baseline vs treated sessions on real
 tasks, with judgment criteria written before the work starts — see

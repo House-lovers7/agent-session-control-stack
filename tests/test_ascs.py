@@ -6,6 +6,7 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -123,6 +124,15 @@ def make_exp004_fixture(tmp: str, *, void_pair=True, scope_differs=True, pair2_s
 
 def ev(name, note="", timestamp="2026-07-06T00:00:00+00:00"):
     return {"timestamp": timestamp, "event": name, "note": note}
+
+
+def v1ev(name, note="recorded", timestamp="2026-07-06T00:00:00+00:00"):
+    return {
+        "schema_version": 1,
+        "timestamp": timestamp,
+        "event": name,
+        "note": note,
+    }
 
 
 def checkpointed_arm(failing=2):
@@ -322,13 +332,262 @@ class TestMeasureExperiment004(unittest.TestCase):
         self.assertEqual(after, before)
 
 
+class TestEvidenceBoundaries(unittest.TestCase):
+    def test_experiment_name_rejects_traversal_before_writing(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            args = argparse.Namespace(
+                name="../escaped",
+                runtime="codex",
+                target_repo="target",
+                gate_profile="default",
+            )
+            with mock.patch.object(ascs, "repo_root", return_value=root), quiet() as (_out, err):
+                status = ascs.init_experiment(args)
+            self.assertEqual(status, 1)
+            self.assertIn("experiment name", err.getvalue())
+            self.assertFalse((root / "escaped").exists())
+
+    def test_negative_metric_is_rejected_by_cli_parser(self):
+        parser = ascs.build_parser()
+        with quiet(), self.assertRaises(SystemExit):
+            parser.parse_args(
+                [
+                    "finish",
+                    "--experiment",
+                    "example",
+                    "--missed-state-files",
+                    "0",
+                    "--human-corrections",
+                    "-1",
+                ]
+            )
+
+    def test_negative_persisted_metric_cannot_score_pass(self):
+        with TemporaryDirectory() as tmp:
+            experiment = make_experiment(tmp)
+            data = json.loads((experiment / "experiment.json").read_text(encoding="utf-8"))
+            data["metrics"] = {
+                "resume_time_seconds": 1,
+                "missed_state_files": 0,
+                "repeated_failures": 0,
+                "rejected_option_relapses": 0,
+                "human_corrections": -1,
+            }
+            (experiment / "experiment.json").write_text(json.dumps(data), encoding="utf-8")
+            with quiet() as (out, err):
+                status = ascs.score_experiment(argparse.Namespace(experiment=str(experiment)))
+        self.assertEqual(status, 1)
+        self.assertNotIn("Score: **PASS**", out.getvalue())
+        self.assertIn("non-negative", err.getvalue())
+
+    def test_reported_only_profile_also_rejects_negative_metrics(self):
+        metrics = {
+            "resume_time_seconds": 1,
+            "missed_checkpoint_items": 0,
+            "missed_state_files": "n/a",
+            "human_corrections": -1,
+            "recovery_quality": 3,
+        }
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            ascs.calculate_score(metrics, gate_profile="experiment-004")
+
+    def test_legacy_event_read_requires_explicit_opt_in(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            write_events(path, [ev("resume-start", "legacy")])
+            with self.assertRaises(ValueError):
+                ascs.read_events(path)
+            events = ascs.read_events(path, allow_legacy=True)
+        self.assertEqual(events[0]["event"], "resume-start")
+
+    def test_unknown_event_schema_version_fails_closed(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            event = v1ev("resume-start")
+            event["schema_version"] = 2
+            write_events(path, [event])
+            with self.assertRaises(ValueError):
+                ascs.read_events(path)
+
+    def test_duplicate_event_keys_fail_closed(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text(
+                '{"schema_version":1,"timestamp":"2026-07-06T00:00:00+00:00",'
+                '"event":"resume-start","event":"first-progress-edit","note":"ambiguous"}\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "ambiguous JSON"):
+                ascs.read_events(path)
+
+    def test_record_writes_schema_version_one(self):
+        with TemporaryDirectory() as tmp:
+            experiment = Path(tmp) / "experiment"
+            experiment.mkdir()
+            with quiet():
+                status = ascs.record_event(
+                    argparse.Namespace(
+                        experiment=str(experiment), event="resume-start", note="start"
+                    )
+                )
+            event = json.loads((experiment / "events.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(status, 0)
+        self.assertEqual(event["schema_version"], 1)
+
+    def test_malformed_evidence_fails_measure_closed(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "experiment"
+            arm = root / "run-p1-baseline"
+            arm.mkdir(parents=True)
+            write_events(
+                arm / "events.jsonl",
+                [
+                    {
+                        "schema_version": 1,
+                        "timestamp": "2026-07-06T00:00:00+00:00",
+                        "event": 42,
+                        "note": "bad",
+                    }
+                ],
+            )
+            with quiet() as (_out, err):
+                status = ascs.measure_experiment(
+                    argparse.Namespace(experiment=None, experiment_dir=str(root), format="text")
+                )
+        self.assertEqual(status, 1)
+        self.assertIn("invalid evidence", err.getvalue())
+
+    def test_aborted_resume_requires_a_fresh_resume_start(self):
+        seconds, detail = ascs.derive_resume_time_from_events(
+            [
+                v1ev("resume-start", timestamp="2026-07-06T00:00:00+00:00"),
+                v1ev("resume-attempt-aborted", timestamp="2026-07-06T00:00:10+00:00"),
+                v1ev("first-progress-edit", timestamp="2026-07-06T00:01:00+00:00"),
+            ]
+        )
+        self.assertIsNone(seconds)
+        self.assertIn("fresh `resume-start`", detail)
+
+    def test_arbitrary_arm_names_cannot_form_valid_comparison(self):
+        evidence = pure_evidence(
+            [{"pair": "1", "arm_events": {"red": valid_arm(), "blue": valid_arm()}}],
+            closeout=False,
+        )
+        pair = ascs.compute_claim_verdict(evidence, allow_legacy=True)["pair_statuses"][0]
+        self.assertEqual(pair["status"], "INCOMPLETE")
+        self.assertIn("baseline", pair["claim_boundary"])
+
+    def test_more_than_two_arms_cannot_form_valid_comparison(self):
+        evidence = pure_evidence(
+            [
+                {
+                    "pair": "1",
+                    "arm_events": {
+                        "run-p1-baseline": valid_arm(),
+                        "run-p1-treated": valid_arm(),
+                        "run-p1-extra": valid_arm(),
+                    },
+                }
+            ],
+            closeout=False,
+        )
+        pair = ascs.compute_claim_verdict(evidence, allow_legacy=True)["pair_statuses"][0]
+        self.assertEqual(pair["status"], "INCOMPLETE")
+
+    def test_pair_verdict_notes_must_be_coherent(self):
+        baseline = valid_arm()
+        treated = valid_arm()
+        baseline[-1]["note"] = "pair=1; winner=baseline"
+        treated[-1]["note"] = "pair=1; winner=treated"
+        evidence = pure_evidence(
+            [
+                {
+                    "pair": "1",
+                    "arm_events": {
+                        "run-p1-baseline": baseline,
+                        "run-p1-treated": treated,
+                    },
+                }
+            ],
+            closeout=False,
+        )
+        pair = ascs.compute_claim_verdict(evidence, allow_legacy=True)["pair_statuses"][0]
+        self.assertEqual(pair["status"], "INCOMPLETE")
+        self.assertIn("coherent", pair["claim_boundary"])
+
+    def test_substring_event_names_do_not_count_as_layer_evidence(self):
+        fake_layer_events = [
+            ev("decompression", "fake"),
+            ev("unhealthy", "fake"),
+            ev("precompactpluspost", "fake"),
+        ]
+        evidence = pure_evidence(
+            [
+                {
+                    "pair": "1",
+                    "arm_events": {
+                        "run-p1-baseline": valid_arm() + fake_layer_events,
+                        "run-p1-treated": valid_arm() + fake_layer_events,
+                    },
+                }
+            ],
+            closeout=False,
+        )
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
+        self.assertTrue(
+            all(layer["status"] == "no evidence" for layer in result["layer_evidence"].values())
+        )
+        self.assertEqual(result["composition_evidence"]["status"], "no composition evidence")
+
+    def test_delimiter_bounded_layer_events_still_count(self):
+        layer_events = [
+            ev("pxpipe-compression", "observed"),
+            ev("session-health:intervention", "observed"),
+            ev("compact-plus/recovery-injection", "observed"),
+        ]
+        evidence = pure_evidence(
+            [
+                {
+                    "pair": "1",
+                    "arm_events": {
+                        "run-p1-baseline": valid_arm() + layer_events,
+                        "run-p1-treated": valid_arm() + layer_events,
+                    },
+                }
+            ],
+            closeout=False,
+        )
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
+        self.assertTrue(
+            all(layer["status"] != "no evidence" for layer in result["layer_evidence"].values())
+        )
+        self.assertIn("consistency evidence", result["composition_evidence"]["status"])
+
+    def test_compute_requires_explicit_legacy_mode(self):
+        evidence = pure_evidence(
+            [
+                {
+                    "pair": "1",
+                    "arm_events": {
+                        "run-p1-baseline": valid_arm(),
+                        "run-p1-treated": valid_arm(),
+                    },
+                }
+            ],
+            closeout=False,
+        )
+        with self.assertRaises(ValueError):
+            ascs.compute_claim_verdict(evidence)
+
+
 class TestComputeClaimVerdict(unittest.TestCase):
     def test_void_pair_blocks_treated_vs_baseline_claims(self):
         void = ev("void-pair", "condition=3; note=scope audit")
         evidence = pure_evidence([
             {"pair": "1", "arm_events": {"a": checkpointed_arm(2) + [void], "b": checkpointed_arm(3) + [void]}},
         ])
-        result = ascs.compute_claim_verdict(evidence)
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
         pair = result["pair_statuses"][0]
         self.assertEqual(pair["status"], "VOID condition 3")
         self.assertIn("Treated outperformed baseline.", result["disallowed_claims"])
@@ -340,7 +599,7 @@ class TestComputeClaimVerdict(unittest.TestCase):
         evidence = pure_evidence([
             {"pair": "2", "arm_events": {"a": [ev("preregistration")], "b": [ev("preregistration")]}},
         ])
-        result = ascs.compute_claim_verdict(evidence)
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
         pair = result["pair_statuses"][0]
         self.assertEqual(pair["status"], "NOT RUN")
         self.assertEqual(pair["claim_boundary"], "incomplete pair; not a failure")
@@ -351,7 +610,7 @@ class TestComputeClaimVerdict(unittest.TestCase):
             [{"pair": "1", "arm_events": {"a": checkpointed_arm(2), "b": checkpointed_arm(3)}}],
             closeout=False,
         )
-        result = ascs.compute_claim_verdict(evidence)
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
         pair = result["pair_statuses"][0]
         self.assertEqual(pair["status"], "INCOMPLETE")
         self.assertFalse(pair["scope_differs_event"])
@@ -364,7 +623,7 @@ class TestComputeClaimVerdict(unittest.TestCase):
             [{"pair": "1", "arm_events": {"a": checkpointed_arm(2) + [audit], "b": checkpointed_arm(3)}}],
             closeout=False,
         )
-        result = ascs.compute_claim_verdict(evidence)
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
         pair = result["pair_statuses"][0]
         self.assertEqual(pair["status"], "VOID (scope_differs audit)")
         self.assertIn("no treated-vs-baseline claim", pair["claim_boundary"])
@@ -375,7 +634,7 @@ class TestComputeClaimVerdict(unittest.TestCase):
             {"pair": "1", "arm_events": {"a": checkpointed_arm(2) + [void], "b": checkpointed_arm(3) + [void]}},
             {"pair": "2", "arm_events": {"a": [ev("preregistration")], "b": [ev("preregistration")]}},
         ])
-        result = ascs.compute_claim_verdict(evidence)
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
         self.assertEqual(result["experiment_status"], "STOPPED / no valid comparison")
         self.assertEqual(result["evidence_level"], "evidence-loop validation only")
         joined = " ".join(result["disallowed_claims"])
@@ -388,10 +647,16 @@ class TestComputeClaimVerdict(unittest.TestCase):
 
     def test_valid_pair_is_consistency_evidence_only(self):
         evidence = pure_evidence(
-            [{"pair": "1", "arm_events": {"a": valid_arm(2), "b": valid_arm(2)}}],
+            [{
+                "pair": "1",
+                "arm_events": {
+                    "run-p1-baseline": valid_arm(2),
+                    "run-p1-treated": valid_arm(2),
+                },
+            }],
             closeout=False,
         )
-        result = ascs.compute_claim_verdict(evidence)
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
         self.assertEqual(result["experiment_status"], "COMPLETE / valid comparisons available")
         self.assertIn("consistency evidence only", result["evidence_level"])
         self.assertIn("not causality", result["evidence_level"])
@@ -407,27 +672,27 @@ class TestComputeClaimVerdict(unittest.TestCase):
             [{
                 "pair": "1",
                 "arm_events": {
-                    "with_resume": valid_arm(with_resume=True),
-                    "without_resume": valid_arm(),
+                    "run-p1-baseline": valid_arm(with_resume=True),
+                    "run-p1-treated": valid_arm(),
                 },
             }],
             closeout=False,
         )
-        result = ascs.compute_claim_verdict(evidence)
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
         resume = result["pair_statuses"][0]["resume_time"]
-        self.assertTrue(resume["with_resume"]["trusted"])
-        self.assertEqual(resume["with_resume"]["seconds"], 42)
-        self.assertFalse(resume["without_resume"]["trusted"])
+        self.assertTrue(resume["run-p1-baseline"]["trusted"])
+        self.assertEqual(resume["run-p1-baseline"]["seconds"], 42)
+        self.assertFalse(resume["run-p1-treated"]["trusted"])
         resume_claims = [c for c in result["allowed_claims"] if "resume_time_seconds" in c]
         self.assertEqual(len(resume_claims), 1)
-        self.assertIn("with_resume", resume_claims[0])
+        self.assertIn("run-p1-baseline", resume_claims[0])
 
     def test_layer_evidence_separates_three_layers(self):
         void = ev("void-pair", "condition=3; note=x")
         evidence = pure_evidence([
             {"pair": "1", "arm_events": {"a": checkpointed_arm(2) + [void], "b": checkpointed_arm(3) + [void]}},
         ])
-        result = ascs.compute_claim_verdict(evidence)
+        result = ascs.compute_claim_verdict(evidence, allow_legacy=True)
         layers = result["layer_evidence"]
         self.assertEqual(set(layers), {"compression", "health_detection", "checkpoint_recovery"})
         self.assertEqual(layers["compression"]["status"], "no evidence")
