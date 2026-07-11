@@ -21,6 +21,8 @@ English: [README.md](README.md)
 
 ASCS は設計文書だけではありません。今日から 4 つの実用的な使い方ができます。
 
+初めての方へ: **[ユーザーガイド](docs/user-guide.ja.md)** が、各層の処理内容・セットアップ・日常の使い方・トラブルシューティングを 1 本で説明します。
+
 ### 1. Claude Code スタックを診断する
 
 read-only の ASCS doctor をインストール:
