@@ -21,6 +21,8 @@ Core rule:
 
 ASCS is not only a design document. You can use it today in four practical ways.
 
+New here? The **[User Guide](docs/user-guide.md)** walks through what each layer does, setup, day-to-day use, and troubleshooting in one document.
+
 ### 1. Diagnose your Claude Code stack
 
 Install the read-only ASCS doctor:
