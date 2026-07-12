@@ -97,15 +97,26 @@ alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 ### `/ascs:doctor` の出力の読み方
 
 ```text
-  1 Compression   pxpipe proxy: not listening on 127.0.0.1:47821 (layer inactive — optional, opt-in)
-  2 Health        session-health plugin: INSTALLED (single compact decider)
-  3 Checkpoint    compact-plus plugin: INSTALLED (transcript backup + state capture on PreCompact)
-  4 Recovery      compact-plus plugin: INSTALLED (recovery injection after compaction)
+ASCS doctor (read-only) — layer status
+overall: all clear — nothing needs your attention right now
 
-  Single-decider rule: OK (no compact-warn marker producer detected; ...)
+[--] 1 Compression — pxpipe proxy (optional, opt-in)
+     role: compress older history to save tokens before it reaches the model
+     status: no listener at 127.0.0.1:47821 — layer not in use, which is fine
+     this session: ANTHROPIC_BASE_URL is unset — not routed through the proxy
+
+[OK] 2 Health — session-health plugin: ENABLED (single compact decider)
+     role: watch session growth; the single layer that advises compaction
+  ...
+Single-decider check — exactly one layer may advise compaction
+  NO CONFIRMED CONFLICT in inspected local and file-managed settings
+  ...
+legend: [OK] active   [--] not in use (fine)   [??] cannot be verified from here   [!!] needs attention
 ```
 
-- **「not installed」「not listening」は情報表示であってエラーではありません** — 各層は単体で導入・撤去できます。
+- **まず `overall:` 行を読んでください** — 対応が必要かどうかが 1 行で分かります。各層の `action:` 行は、やるべきことがある時にだけ表示されます。
+- ステータスタグ: `[OK]` 稼働中 / `[--]` 未使用（問題なし — 各層はオプトイン） / `[??]` ここからは検証不能（例: ポートは開いているがサービスの同一性は未証明） / `[!!]` 要対応。
+- **`[--]`・「not present」・「no listener」は情報表示であってエラーではありません** — 各層は単体で導入・撤去できます。
 - Exit code `0` = 衝突なし。`1` = single-decider の **CONFLICT**（compact-warn marker の生成器が有効で、2 つのコンポーネントが compact を助言している状態 — 生成器を撤去してください）。
 - pxpipe が listen 中なら、doctor は**このセッション**が実際に proxy を経由しているか（`ANTHROPIC_BASE_URL`）も教えてくれます。
 

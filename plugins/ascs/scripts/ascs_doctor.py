@@ -235,40 +235,58 @@ def warn_marker_present():
     return False
 
 
-def report_compression():
-    port_open = loopback_port_open()
-    url_state, url_display = sanitize_base_url(os.environ.get("ANTHROPIC_BASE_URL", ""))
+# Presentation tags. Detection stays fail-closed; tags only summarize it.
+TAG_ACTIVE = "[OK]"
+TAG_INACTIVE = "[--]"
+TAG_UNVERIFIED = "[??]"
+TAG_ACTION = "[!!]"
+
+
+def compression_tag(port_open, url_state):
+    if url_state == "INVALID" or (url_state == "LOCAL" and not port_open):
+        return TAG_ACTION
+    return TAG_UNVERIFIED if port_open else TAG_INACTIVE
+
+
+def report_compression(port_open, url_state, url_display):
+    say("{} 1 Compression — pxpipe proxy (optional, opt-in)".format(
+        compression_tag(port_open, url_state)))
+    say("     role: compress older history to save tokens before it reaches the model")
     if port_open:
-        say(
-            "  1 Compression   TCP PORT OPEN at {}:{}; service identity UNVERIFIED".format(
-                PXPIPE_HOST, PXPIPE_PORT
-            )
-        )
+        say("     status: TCP PORT OPEN at {}:{}; service identity UNVERIFIED".format(
+            PXPIPE_HOST, PXPIPE_PORT))
     else:
-        say(
-            "  1 Compression   no listener at {}:{} (layer inactive — optional, opt-in)".format(
-                PXPIPE_HOST, PXPIPE_PORT
-            )
-        )
+        say("     status: no listener at {}:{} — layer not in use, which is fine".format(
+            PXPIPE_HOST, PXPIPE_PORT))
 
     if url_state == "LOCAL":
-        say("                  this session's sanitized routing target: {}".format(url_display))
+        say("     this session: sanitized routing target is {}".format(url_display))
         if port_open:
-            say("                  address matches the documented pxpipe endpoint; service identity remains UNVERIFIED")
+            say("     note: the address matches the documented pxpipe endpoint; service identity remains UNVERIFIED")
         else:
-            say("                  WARNING: the routing target matches pxpipe, but nothing is listening.")
-            say("                  This session cannot reach a model until the reviewed proxy command is started or ANTHROPIC_BASE_URL is unset.")
+            say("     WARNING: the routing target matches pxpipe, but nothing is listening.")
+            say("     action: start the reviewed proxy command or unset ANTHROPIC_BASE_URL;")
+            say("             until then this session cannot reach a model.")
     elif url_state == "OTHER":
-        say("                  this session is not routed to the documented pxpipe endpoint ({})".format(url_display))
+        say("     this session: not routed to the documented pxpipe endpoint ({})".format(url_display))
     elif url_state == "INVALID":
-        say("                  WARNING: ANTHROPIC_BASE_URL has an {}; routing status is UNKNOWN".format(url_display))
+        say("     WARNING: ANTHROPIC_BASE_URL has an {}; routing status is UNKNOWN".format(url_display))
+        say("     action: inspect ANTHROPIC_BASE_URL in this shell, then correct or unset it.")
     else:
-        say("                  ANTHROPIC_BASE_URL is unset — this session is not routed through the proxy")
+        say("     this session: ANTHROPIC_BASE_URL is unset — not routed through the proxy")
     if port_open:
-        say("                  reminder: pxpipe is lossy; keep byte-exact values off allowlisted models. See docs/claude-code/pxpipe-safety.md")
+        say("     note: pxpipe is lossy by design; keep byte-exact values (hashes, commit SHAs,")
+        say("           IDs, credentials, exact paths) off allowlisted models routed through it.")
+        say("           See docs/claude-code/pxpipe-safety.md")
 
 
 def report_plugins(session_health, compact_plus):
+    plugin_tags = {
+        "ENABLED": TAG_ACTIVE,
+        "DISABLED": TAG_INACTIVE,
+        "ABSENT": TAG_INACTIVE,
+        "UNKNOWN": TAG_UNVERIFIED,
+    }
     health_messages = {
         "ENABLED": "session-health plugin: ENABLED (single compact decider)",
         "DISABLED": "session-health plugin: DISABLED",
@@ -283,49 +301,91 @@ def report_plugins(session_health, compact_plus):
     }
     session_health = session_health if session_health in VALID_PLUGIN_STATES else "UNKNOWN"
     compact_plus = compact_plus if compact_plus in VALID_PLUGIN_STATES else "UNKNOWN"
-    say("  2 Health        " + health_messages[session_health])
-    say("  3 Checkpoint    " + compact_messages[compact_plus])
-    say("  4 Recovery      " + compact_messages[compact_plus])
+    say("{} 2 Health — {}".format(plugin_tags[session_health], health_messages[session_health]))
+    say("     role: watch session growth; the single layer that advises compaction")
+    if session_health == "UNKNOWN" or compact_plus == "UNKNOWN":
+        say("     check: run `claude plugin list` to see the authoritative plugin state")
+    say()
+    say("{} 3 Checkpoint — {}".format(plugin_tags[compact_plus], compact_messages[compact_plus]))
+    say("     role: back up the transcript and captured state right before compaction")
+    say()
+    say("{} 4 Recovery — {}".format(plugin_tags[compact_plus], compact_messages[compact_plus]))
+    say("     role: offer the saved state back to the session right after compaction")
 
 
-def report_single_decider(session_health, compact_plus):
+def classify_single_decider(session_health, compact_plus):
+    """Return (kind, producers, settings_incomplete) without printing."""
     producers, settings_incomplete = configured_producers()
-    markers = warn_marker_present()
-    conflict = False
     if producers:
-        summary = ", ".join(producers)
         if session_health == "ENABLED" and compact_plus == "ENABLED" and not settings_incomplete:
-            conflict = True
-            say("  CONFLICT: compact-warn producer found in {} while both compact decider layers are enabled.".format(summary))
-            say("            Remove the marker producer to restore the single-decider composition (architecture.md §4).")
+            kind = "conflict"
         elif session_health == "UNKNOWN" or compact_plus == "UNKNOWN" or settings_incomplete:
-            say("  WARNING: compact-warn producer found in {}, but effective state is incomplete; potential conflict not cleared.".format(summary))
+            kind = "producer-unclear"
         else:
-            say("  WARNING: compact-warn producer found in {}, but the two relevant plugins are not both enabled.".format(summary))
-            say("           No current conflict is confirmed; remove unused producers to avoid future activation.")
-    elif markers:
+            kind = "producer-inactive"
+    elif warn_marker_present():
+        kind = "stale-markers"
+    else:
+        kind = "clear"
+    return kind, producers, settings_incomplete
+
+
+def report_single_decider(kind, producers, settings_incomplete):
+    say("Single-decider check — exactly one layer may advise compaction")
+    summary = ", ".join(producers)
+    if kind == "conflict":
+        say("  CONFLICT: compact-warn producer found in {} while both compact decider layers are enabled.".format(summary))
+        say("            Remove the marker producer to restore the single-decider composition (architecture.md §4).")
+    elif kind == "producer-unclear":
+        say("  WARNING: compact-warn producer found in {}, but effective state is incomplete; potential conflict not cleared.".format(summary))
+    elif kind == "producer-inactive":
+        say("  WARNING: compact-warn producer found in {}, but the two relevant plugins are not both enabled.".format(summary))
+        say("           No current conflict is confirmed; remove unused producers to avoid future activation.")
+    elif kind == "stale-markers":
         say("  WARNING: stale or unattributed compact-warn marker(s) found; no active producer was confirmed in inspected files.")
         say("           Markers alone do not prove a single-decider conflict.")
     else:
-        say("  Single-decider rule: NO CONFIRMED CONFLICT in inspected local and file-managed settings")
+        say("  NO CONFIRMED CONFLICT in inspected local and file-managed settings")
     if settings_incomplete:
         say("  WARNING: at least one settings file was unreadable or invalid; producer status is incomplete.")
-    say("  Scope note: server/MDM/registry-managed and command-line settings cannot be resolved by this read-only script; use Claude /status to verify active sources.")
-    return conflict
+    say("  scope: server/MDM/registry-managed and command-line settings cannot be resolved by this")
+    say("         read-only script; use Claude /status to verify active sources.")
+
+
+def overall_line(kind, settings_incomplete, port_open, url_state):
+    if kind == "conflict":
+        return "overall: action required — two layers are set up to advise compaction (see Single-decider check)"
+    warnings = 0
+    if kind in {"producer-unclear", "producer-inactive", "stale-markers"}:
+        warnings += 1
+    if settings_incomplete:
+        warnings += 1
+    if url_state == "INVALID" or (url_state == "LOCAL" and not port_open):
+        warnings += 1
+    if warnings:
+        return "overall: no confirmed conflict, but {} warning(s) below are worth a look".format(warnings)
+    return "overall: all clear — nothing needs your attention right now"
 
 
 def main():
     session_health, compact_plus = plugin_states()
+    port_open = loopback_port_open()
+    url_state, url_display = sanitize_base_url(os.environ.get("ANTHROPIC_BASE_URL", ""))
+    kind, producers, settings_incomplete = classify_single_decider(session_health, compact_plus)
+
     say("ASCS doctor (read-only) — layer status")
+    say(overall_line(kind, settings_incomplete, port_open, url_state))
     say()
-    report_compression()
+    report_compression(port_open, url_state, url_display)
+    say()
     report_plugins(session_health, compact_plus)
     say()
-    conflict = report_single_decider(session_health, compact_plus)
+    report_single_decider(kind, producers, settings_incomplete)
     say()
+    say("legend: [OK] active   [--] not in use (fine)   [??] cannot be verified from here   [!!] needs attention")
     say("Layers are independently adoptable; absent, disabled, and unknown states are informational unless a confirmed conflict is shown.")
     say("Upstream credits: pxpipe (teamchong), claude-code-session-health (House-lovers7), compact-plus (u-ichi) — see ATTRIBUTION.md.")
-    return 1 if conflict else 0
+    return 1 if kind == "conflict" else 0
 
 
 if __name__ == "__main__":

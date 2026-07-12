@@ -97,15 +97,26 @@ Use the alias, not a global `ANTHROPIC_BASE_URL` in `settings.json` — a forgot
 ### Reading `/ascs:doctor` output
 
 ```text
-  1 Compression   pxpipe proxy: not listening on 127.0.0.1:47821 (layer inactive — optional, opt-in)
-  2 Health        session-health plugin: INSTALLED (single compact decider)
-  3 Checkpoint    compact-plus plugin: INSTALLED (transcript backup + state capture on PreCompact)
-  4 Recovery      compact-plus plugin: INSTALLED (recovery injection after compaction)
+ASCS doctor (read-only) — layer status
+overall: all clear — nothing needs your attention right now
 
-  Single-decider rule: OK (no compact-warn marker producer detected; ...)
+[--] 1 Compression — pxpipe proxy (optional, opt-in)
+     role: compress older history to save tokens before it reaches the model
+     status: no listener at 127.0.0.1:47821 — layer not in use, which is fine
+     this session: ANTHROPIC_BASE_URL is unset — not routed through the proxy
+
+[OK] 2 Health — session-health plugin: ENABLED (single compact decider)
+     role: watch session growth; the single layer that advises compaction
+  ...
+Single-decider check — exactly one layer may advise compaction
+  NO CONFIRMED CONFLICT in inspected local and file-managed settings
+  ...
+legend: [OK] active   [--] not in use (fine)   [??] cannot be verified from here   [!!] needs attention
 ```
 
-- **"not installed" / "not listening" is informational, not an error** — layers are independently adoptable.
+- **Read the `overall:` line first** — it says whether anything needs your attention at all. Per-layer `action:` lines only appear when there is something to do.
+- Status tags: `[OK]` active / `[--]` not in use (fine — layers are opt-in) / `[??]` cannot be verified from here (e.g. an open port whose service identity is unproven) / `[!!]` needs attention.
+- **`[--]` / "not present" / "no listener" is informational, not an error** — layers are independently adoptable.
 - Exit code `0` = no conflict; `1` = single-decider **CONFLICT** (a compact-warn marker producer is active, so two components advise compaction — remove the producer).
 - If pxpipe is listening, the doctor also tells you whether *this* session is actually routed through it (`ANTHROPIC_BASE_URL`).
 

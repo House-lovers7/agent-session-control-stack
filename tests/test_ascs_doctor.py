@@ -154,6 +154,7 @@ class TestAscsDoctor(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("CONFLICT:", result.stdout)
         self.assertIn("project settings", result.stdout)
+        self.assertIn("overall: action required", result.stdout)
 
     def test_invalid_plugin_listing_fails_closed_to_unknown(self):
         result = self.run_doctor("not-json")
@@ -224,6 +225,20 @@ class TestAscsDoctor(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("INJECTED", result.stdout)
         self.assertIn("invalid or unsafe value redacted", result.stdout)
+
+    def test_healthy_output_leads_with_overall_and_ends_with_legend(self):
+        result = self.run_doctor(
+            [
+                {"id": "session-health@test", "enabled": True},
+                {"id": "compact-plus@test", "enabled": True},
+            ]
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertTrue(lines[1].startswith("overall: "), lines[:3])
+        self.assertIn("legend: [OK] active", result.stdout)
+        # Healthy runs must stay quiet: no per-layer action prompts.
+        self.assertNotIn("action:", result.stdout)
 
     def test_open_port_is_not_claimed_as_verified_pxpipe(self):
         with listening_socket() as port:
