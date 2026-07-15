@@ -297,6 +297,22 @@ This repository is an integration/reference architecture. It does not claim owne
 ## More
 
 - Living architecture / claim-boundary architecture: [architecture](docs/architecture.md)
+- Assetized audit-to-fix workflow and current register: [improvement loop](docs/improvement-loop.md) · [`config/improvements.json`](config/improvements.json)
+- No-model compact-plus marker/recovery contract check: [synthetic smoke](docs/compact-plus-synthetic-smoke.md)
 - Design originals (Phase 0, Japanese): [hook responsibilities](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md draft](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
 - Roadmap: Phase 0 design ✅ → Phase 1 docs-only reference architecture (this set) → Phase 2 before/after measurement (harness ready — `scripts/ascs.py`; first n=1 before/after pair recorded — [Experiment 002](experiments/2026-07-06-codex-handoff-002-summary.md); composition effect still unmeasured) → Phase 3 upstream collaboration → Phase 4+ tooling (generator / install-state doctor / automated measurement), only if Phase 2 clears the withdrawal criteria
 - License: MIT — [LICENSE](LICENSE)
+
+<!-- BEGIN GENERATED ENGINEERING HANDBOOK -->
+## Engineering handbook
+
+- [Start here](./docs/engineering/README.md)
+- [Architecture / system diagram](./docs/engineering/02_architecture.md)
+- [API](./docs/engineering/04_api.md) / [Data model](./docs/engineering/05_data_model.md) / [Screens](./docs/engineering/06_screen_design.md)
+- Detected check: manifest script未検出
+- Snapshot: API 0 / entity 1 / screen 0 / test files 8
+- Data sources: `scripts/exp004.py`, `scripts/exp005.py`
+- Handoff gaps: 4 P0/P1 items — [details](./docs/engineering/00_one_pager.md#引継ぎ時の未解決ギャップ)
+
+> Generated from the current checkout. Existing ADR/schema/runbook remains authoritative; production state is not asserted.
+<!-- END GENERATED ENGINEERING HANDBOOK -->
