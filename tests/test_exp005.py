@@ -31,12 +31,18 @@ RUNTIME_ARGS = {
     "approval_mode": "auto",
     "fast_mode": "off",
     "claude_code_version": "2.1.0",
+    "billing_scope": "claude-max-subscription",
+    "max_arm_minutes": 45,
+    "max_arm_retries": 1,
+    "paid_run_approved": True,
 }
 
 RUNTIME_NOTE = (
     "runtime_model=claude-opus-4-8; runtime_effort=high; "
     "runtime_approval_mode=auto; runtime_fast_mode=off; "
-    "runtime_cli_version=2.1.0"
+    "runtime_cli_version=2.1.0; cost_billing_scope=claude-max-subscription; "
+    "cost_max_arm_minutes=45; cost_max_arm_retries=1; "
+    "cost_paid_run_approved=true"
 )
 
 
@@ -74,6 +80,10 @@ def isolation_event(**overrides: str) -> dict[str, str]:
         "runtime_approval_mode": "auto",
         "runtime_fast_mode": "off",
         "runtime_cli_version": "2.1.0",
+        "cost_billing_scope": "claude-max-subscription",
+        "cost_max_arm_minutes": "45",
+        "cost_max_arm_retries": "1",
+        "cost_paid_run_approved": "true",
     }
     fields.update(overrides)
     note = "isolation-setup; checkout_id: test; base commit: " + "a" * 40
@@ -92,6 +102,27 @@ class TestFrozenEvidence(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(proc.returncode, 0, f"frozen evidence changed: {path}")
+
+
+class TestDocumentationContract(unittest.TestCase):
+    def test_cost_gate_is_documented_with_approval_and_stop_conditions(self):
+        design = (REPO_ROOT / "docs/experiment-005-design.md").read_text(
+            encoding="utf-8"
+        )
+        risk_register = (REPO_ROOT / "docs/risk-register.md").read_text(
+            encoding="utf-8"
+        )
+        for token in (
+            "--billing-scope",
+            "--max-arm-minutes",
+            "--max-arm-retries",
+            "--paid-run-approved",
+            "Human Approval Gate",
+            "4 arms × 45 minutes",
+            "does not transfer approval",
+        ):
+            self.assertIn(token, design)
+        self.assertIn("Experiment 005 paid-runtime budget", risk_register)
 
 
 class TestPromptGeneration(unittest.TestCase):
@@ -203,6 +234,10 @@ class TestSetup(unittest.TestCase):
             "runtime_approval_mode": "auto",
             "runtime_fast_mode": "off",
             "runtime_cli_version": "2.1.0",
+            "cost_billing_scope": "claude-max-subscription",
+            "cost_max_arm_minutes": "45",
+            "cost_max_arm_retries": "1",
+            "cost_paid_run_approved": "true",
         }
         note = exp005.isolation_setup_note(
             exp005.arm_from_name("005-p1-treated"),
@@ -242,6 +277,54 @@ class TestRuntimeStandardization(unittest.TestCase):
             self.assertEqual(status, 1, overrides)
             self.assertIsNone(fields)
 
+    def test_prepare_parser_accepts_explicit_cost_gate(self):
+        parser = exp005.build_parser()
+        args = parser.parse_args(
+            [
+                "prepare-arm",
+                "005-p1-baseline",
+                "--target-repo",
+                "/target",
+                "--base",
+                "HEAD",
+                "--model",
+                "claude-opus-4-8",
+                "--effort",
+                "high",
+                "--approval-mode",
+                "auto",
+                "--fast-mode",
+                "off",
+                "--claude-code-version",
+                "2.1.0",
+                "--billing-scope",
+                "claude-max-subscription",
+                "--max-arm-minutes",
+                "45",
+                "--max-arm-retries",
+                "1",
+                "--paid-run-approved",
+            ]
+        )
+        self.assertEqual(args.billing_scope, "claude-max-subscription")
+        self.assertEqual(args.max_arm_minutes, 45)
+        self.assertEqual(args.max_arm_retries, 1)
+        self.assertTrue(args.paid_run_approved)
+
+    def test_cost_gate_is_required_before_prepare(self):
+        for overrides in (
+            {"paid_run_approved": False},
+            {"max_arm_minutes": 0},
+            {"max_arm_retries": -1},
+            {"billing_scope": "person@example.com"},
+        ):
+            with quiet():
+                fields, status = exp005.runtime_fields_from_args(
+                    self.prepare_args(**overrides)
+                )
+            self.assertEqual(status, 1, overrides)
+            self.assertIsNone(fields)
+
     def test_recorded_runtime_fields_parse_isolation_setup_note(self):
         arm = exp005.arm_from_name("005-p1-baseline")
         with mock.patch.object(exp005, "load_events", return_value=[isolation_event()]):
@@ -265,6 +348,10 @@ class TestRuntimeStandardization(unittest.TestCase):
             "runtime_approval_mode": "auto",
             "runtime_fast_mode": "off",
             "runtime_cli_version": "2.1.0",
+            "cost_billing_scope": "claude-max-subscription",
+            "cost_max_arm_minutes": "45",
+            "cost_max_arm_retries": "1",
+            "cost_paid_run_approved": "true",
         }
         fields.update(overrides)
         return fields
@@ -663,6 +750,24 @@ class TestPairTransactions(unittest.TestCase):
 
 
 class TestRecordAndFinishCommands(unittest.TestCase):
+    def test_finish_arm_parser_rejects_negative_metrics(self):
+        parser = exp005.build_parser()
+        for flag in ("--missed-checkpoint-items", "--human-corrections"):
+            args = [
+                "finish-arm",
+                "005-p1-baseline",
+                "--missed-checkpoint-items",
+                "0",
+                "--human-corrections",
+                "0",
+                "--recovery-quality",
+                "4",
+                "--runtime-conditions-held",
+            ]
+            args[args.index(flag) + 1] = "-1"
+            with self.subTest(flag=flag), quiet(), self.assertRaises(SystemExit):
+                parser.parse_args(args)
+
     def make_finish_fixture(self, tmp: str):
         experiment = Path(tmp) / "experiment"
         experiment.mkdir()

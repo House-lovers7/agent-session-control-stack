@@ -406,6 +406,23 @@ class TestPairTransactions(unittest.TestCase):
 
 
 class TestRecordAndFinishCommands(unittest.TestCase):
+    def test_finish_arm_parser_rejects_negative_metrics(self):
+        parser = exp004.build_parser()
+        for flag in ("--missed-checkpoint-items", "--human-corrections"):
+            args = [
+                "finish-arm",
+                "004-p1-baseline",
+                "--missed-checkpoint-items",
+                "0",
+                "--human-corrections",
+                "0",
+                "--recovery-quality",
+                "4",
+            ]
+            args[args.index(flag) + 1] = "-1"
+            with self.subTest(flag=flag), quiet(), self.assertRaises(SystemExit):
+                parser.parse_args(args)
+
     def make_finish_fixture(self, tmp: str):
         experiment = Path(tmp) / "experiment"
         experiment.mkdir()

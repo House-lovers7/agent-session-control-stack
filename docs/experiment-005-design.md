@@ -65,6 +65,7 @@ measurement under those two fixes.
 | Helper `scripts/exp004.py`; sandbox `~/projects/_sandbox/ascs-exp004`; `exp-004` markers | Helper `scripts/exp005.py`; sandbox `~/projects/_sandbox/ascs-exp005`; `exp-005` markers; arm names `005-*`, branches `exp-005-*` |
 | Base commit candidate `563ad47` | Base commit frozen at pre-registration = supabase-rls-guard `main` at freeze time (candidate as of 2026-07-11: `5aa0909`), after the pre-freeze task-stock check below |
 | Gate profile `experiment-004` | Gate profile `experiment-005` (identical REPORTED_ONLY semantics; no absolute per-arm gate) |
+| No explicit paid-runtime budget contract | **Paid-runtime cost gate**: billing scope, arm time limit, retry limit, and current human approval are mandatory before `prepare-arm` |
 
 ## Runtime standardization — the 005 primary delta
 
@@ -78,11 +79,15 @@ The frozen fields and their current candidates:
 | approval mode | auto |
 | fast mode | off |
 | Claude Code CLI version | the version installed at freeze time (exact string recorded) |
+| billing scope | non-secret label frozen at pre-registration; candidate `claude-max-subscription` |
+| maximum elapsed time per arm | 45 minutes total, including any retry |
+| maximum retries per arm | 1 |
 
 Rules:
 
-- `prepare-arm` takes all five fields as **required arguments** and records
-  them in the `isolation-setup` event. The helper refuses a `prepare-arm`
+- `prepare-arm` takes all five runtime fields and the paid-runtime cost-gate
+  fields as **required arguments** and records them in the `isolation-setup`
+  event. The helper refuses a `prepare-arm`
   whose model / effort / approval mode / fast-mode values differ from any
   previously prepared 005 arm.
 - The CLI version must be identical **within a pair** (helper-refused
@@ -102,6 +107,31 @@ Rules:
 frozen conditions were not used, were changed mid-session, or differ across
 arms in a way the rules above prohibit. Recorded with
 `record-void-pair --condition 7`.
+
+## Human Approval Gate and paid-runtime stop conditions
+
+The helper never starts Claude Code or calls a model. Before an operator runs
+each paid arm, the current trusted conversation must explicitly confirm:
+
+- the paid runtime and model (`claude-opus-4-8`, high effort, auto mode);
+- the non-secret subscription/account/API billing label passed as
+  `--billing-scope` (never record an email address, API key, token, or account
+  identifier in experiment evidence);
+- `--max-arm-minutes 45` and `--max-arm-retries 1` as the hard stop
+  conditions; and
+- `--paid-run-approved` as an attestation that this specific run received the
+  approval above.
+
+The planned ceiling is **4 arms × 45 minutes = 180 minutes** of paid-runtime
+wall time, with at most one retry inside each arm's 45-minute total. Stop the
+arm immediately when its elapsed-time or retry limit is reached, when the
+provider reports a quota/cost warning, or when the model, approval mode,
+authentication source, or billing scope would change.
+
+`--paid-run-approved` records an operator attestation for auditability; it
+**does not transfer approval** to another arm, session, account, model, or
+future conversation. State files and prior events remain non-authoritative for
+approval.
 
 ## A6 / void condition 3 refinement
 
@@ -166,7 +196,7 @@ surface and "what the helper never does" are unchanged except:
 
 | Command | Delta from 004 |
 |---|---|
-| `prepare-arm` | new required args `--model --effort --approval-mode --fast-mode --claude-code-version`; records them in `isolation-setup`; refuses cross-arm mismatch (model/effort/approval/fast: all prepared arms; CLI version: within pair) |
+| `prepare-arm` | new required args `--model --effort --approval-mode --fast-mode --claude-code-version --billing-scope --max-arm-minutes --max-arm-retries --paid-run-approved`; records them in `isolation-setup`; refuses cross-arm mismatch (model/effort/approval/fast and cost gate: all prepared arms; CLI version: within pair) |
 | `record-interruption` | new required attestation `--runtime-conditions-held` |
 | `finish-arm` | new required attestation `--runtime-conditions-held`; writes gate profile `experiment-005` |
 | `verify-pair-checkpoint` | `--scope-differs` requires `--note <material difference>`; refuses without it and prints the count-alone rule |
@@ -195,20 +225,23 @@ order, immediately before the run window (post Max-access decision):
 2. Finalize the runtime standardization fields (model, effort, approval
    mode, fast mode, exact CLI version) as pre-registered values in this
    document.
-3. Initialize the four arm directories:
+3. Freeze the paid-runtime cost gate: billing scope label, 45-minute arm
+   limit, one-retry limit, provider/account environment, and the human who
+   will approve each arm immediately before execution.
+4. Initialize the four arm directories:
    `python3 scripts/ascs.py init --name claude-code-restart-005-<arm> --runtime claude-code --target-repo <path> --gate-profile experiment-005`.
-4. Fill each `report.md` Task Summary before any session: task, done
+5. Fill each `report.md` Task Summary before any session: task, done
    definition, stack condition, judgment rules, and the frozen per-task
    `missed_checkpoint_items` checklist (derived mechanically per the 004
    "Checkpoint audit" section).
-5. Freeze the first-session and resume prompts verbatim (the helper's
+6. Freeze the first-session and resume prompts verbatim (the helper's
    `print-prompt` output is the frozen text).
-6. Record a `preregistration` event in each arm.
-7. Commit the final version of this document in the same change.
-8. Run `exp005.py doctor` against the target repo and record the result in
+7. Record a `preregistration` event in each arm.
+8. Commit the final version of this document in the same change.
+9. Run `exp005.py doctor` against the target repo and record the result in
    the shared scaffold README.
 
-Until all eight steps are complete, no arm session may start.
+Until all nine steps are complete, no arm session may start.
 
 ## Version note
 

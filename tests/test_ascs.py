@@ -423,8 +423,8 @@ class TestEvidenceBoundaries(unittest.TestCase):
 
     def test_record_writes_schema_version_one(self):
         with TemporaryDirectory() as tmp:
-            experiment = Path(tmp) / "experiment"
-            experiment.mkdir()
+            experiment = make_experiment(tmp)
+            (experiment / "events.jsonl").write_text("", encoding="utf-8")
             with quiet():
                 status = ascs.record_event(
                     argparse.Namespace(
@@ -434,6 +434,72 @@ class TestEvidenceBoundaries(unittest.TestCase):
             event = json.loads((experiment / "events.jsonl").read_text(encoding="utf-8"))
         self.assertEqual(status, 0)
         self.assertEqual(event["schema_version"], 1)
+
+    def test_record_rejects_missing_experiment_metadata_without_appending(self):
+        with TemporaryDirectory() as tmp:
+            experiment = Path(tmp) / "experiment"
+            experiment.mkdir()
+            events_path = experiment / "events.jsonl"
+            events_path.write_text("", encoding="utf-8")
+            with quiet() as (_out, err):
+                status = ascs.record_event(
+                    argparse.Namespace(
+                        experiment=str(experiment), event="resume-start", note="start"
+                    )
+                )
+            self.assertEqual(status, 1)
+            self.assertEqual(events_path.read_text(encoding="utf-8"), "")
+            self.assertIn("experiment.json", err.getvalue())
+
+    def test_record_rejects_missing_events_file_without_creating_it(self):
+        with TemporaryDirectory() as tmp:
+            experiment = make_experiment(tmp)
+            events_path = experiment / "events.jsonl"
+            events_path.unlink()
+            with quiet() as (_out, err):
+                status = ascs.record_event(
+                    argparse.Namespace(
+                        experiment=str(experiment), event="resume-start", note="start"
+                    )
+                )
+            self.assertEqual(status, 1)
+            self.assertFalse(events_path.exists())
+            self.assertIn("events.jsonl", err.getvalue())
+
+    def test_record_rejects_ambiguous_experiment_metadata_without_appending(self):
+        with TemporaryDirectory() as tmp:
+            experiment = make_experiment(tmp)
+            events_path = experiment / "events.jsonl"
+            events_path.write_text("", encoding="utf-8")
+            (experiment / "experiment.json").write_text(
+                '{"events_file":"other.jsonl","events_file":"events.jsonl"}\n',
+                encoding="utf-8",
+            )
+            with quiet() as (_out, err):
+                status = ascs.record_event(
+                    argparse.Namespace(
+                        experiment=str(experiment), event="resume-start", note="start"
+                    )
+                )
+            self.assertEqual(status, 1)
+            self.assertEqual(events_path.read_text(encoding="utf-8"), "")
+            self.assertIn("invalid experiment evidence", err.getvalue())
+
+    def test_record_rejects_malformed_existing_events_without_appending(self):
+        with TemporaryDirectory() as tmp:
+            experiment = make_experiment(tmp)
+            events_path = experiment / "events.jsonl"
+            original = "{bad-json}\n"
+            events_path.write_text(original, encoding="utf-8")
+            with quiet() as (_out, err):
+                status = ascs.record_event(
+                    argparse.Namespace(
+                        experiment=str(experiment), event="resume-start", note="start"
+                    )
+                )
+            self.assertEqual(status, 1)
+            self.assertEqual(events_path.read_text(encoding="utf-8"), original)
+            self.assertIn("invalid experiment evidence", err.getvalue())
 
     def test_malformed_evidence_fails_measure_closed(self):
         with TemporaryDirectory() as tmp:
@@ -582,6 +648,27 @@ class TestEvidenceBoundaries(unittest.TestCase):
 
 
 class TestComputeClaimVerdict(unittest.TestCase):
+    def test_unrelated_event_does_not_license_evidence_loop_claims(self):
+        evidence = {
+            "experiment": "unrelated-only",
+            "closeout_exists": False,
+            "pairs": [
+                {
+                    "pair": "1",
+                    "arm_events": {
+                        "run": [v1ev("unrelated", "not ASCS evidence")],
+                    },
+                }
+            ],
+        }
+        result = ascs.compute_claim_verdict(evidence)
+        self.assertEqual(
+            result["ascs_evidence_loop"]["status"],
+            "no ASCS evidence-loop mechanism evidence",
+        )
+        self.assertEqual(result["ascs_evidence_loop"]["observed_events"], [])
+        self.assertEqual(result["allowed_claims"], [])
+
     def test_uncommitted_pair_verdict_transaction_never_becomes_valid(self):
         transaction_id = "exp004-pair-1-verdict"
         prepare = ev(

@@ -284,7 +284,7 @@ def reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def read_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+        data = json.load(f, object_pairs_hook=reject_duplicate_json_keys)
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return data
@@ -534,6 +534,23 @@ def record_event(args: argparse.Namespace) -> int:
         print(f"FAIL {experiment_dir} is not an experiment directory", file=sys.stderr)
         return 1
 
+    experiment_json = experiment_dir / "experiment.json"
+    events_path = experiment_dir / "events.jsonl"
+    try:
+        if not experiment_json.is_file():
+            raise ValueError(f"{experiment_json} does not exist")
+        metadata = read_json(experiment_json)
+        if metadata.get("events_file") != events_path.name:
+            raise ValueError(
+                f"{experiment_json} must declare events_file={events_path.name!r}"
+            )
+        if not events_path.is_file():
+            raise ValueError(f"{events_path} does not exist")
+        read_events(events_path)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        print(f"FAIL invalid experiment evidence: {exc}", file=sys.stderr)
+        return 1
+
     if looks_like_non_utc_time(args.note):
         print(
             "WARN note contains a clock time without a UTC marker; "
@@ -556,7 +573,6 @@ def record_event(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"FAIL invalid event: {exc}", file=sys.stderr)
         return 1
-    events_path = experiment_dir / "events.jsonl"
     with events_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, sort_keys=True) + "\n")
     print(f"PASS recorded {args.event} in {events_path}")
@@ -1267,23 +1283,6 @@ def compute_claim_verdict(
                     f"{arm} resume_time_seconds={resume['seconds']} (event-derived: {resume['detail']})"
                 )
 
-    allowed_claims = [f"Experiment {experiment} validated parts of the ASCS evidence loop."]
-    if void_pairs:
-        allowed_claims.append("ASCS can restrict claims when a pair becomes invalid.")
-    allowed_claims.append(f"Experiment {experiment} produced operational lessons for future experiment design.")
-    for entry in valid_pairs:
-        allowed_claims.append(
-            f"Pair {entry['pair']} produced an internally consistent comparison "
-            "(consistency evidence only, not causality)."
-        )
-    # Metrics may support claims only when event-derived; untrusted values never do.
-    for entry in pair_statuses:
-        for arm, resume in entry["resume_time"].items():
-            if resume["trusted"]:
-                allowed_claims.append(
-                    f"{arm} resume_time_seconds={resume['seconds']} is event-derived and reportable as an observed value."
-                )
-
     disallowed_claims = [
         "ASCS improved productivity.",
         "Treated outperformed baseline.",
@@ -1308,6 +1307,30 @@ def compute_claim_verdict(
     }
     ascs_evidence_loop = ascs_evidence_loop_verdict(pair_statuses, any_checkpoint, any_trusted_recovery)
     composition_evidence = composition_verdict(layer_evidence, len(valid_pairs))
+
+    allowed_claims = []
+    if ascs_evidence_loop["observed_events"]:
+        allowed_claims.append(
+            f"Experiment {experiment} validated parts of the ASCS evidence loop."
+        )
+    if void_pairs:
+        allowed_claims.append("ASCS can restrict claims when a pair becomes invalid.")
+    if closeout_exists or void_pairs:
+        allowed_claims.append(
+            f"Experiment {experiment} produced operational lessons for future experiment design."
+        )
+    for entry in valid_pairs:
+        allowed_claims.append(
+            f"Pair {entry['pair']} produced an internally consistent comparison "
+            "(consistency evidence only, not causality)."
+        )
+    # Metrics may support claims only when event-derived; untrusted values never do.
+    for entry in pair_statuses:
+        for arm, resume in entry["resume_time"].items():
+            if resume["trusted"]:
+                allowed_claims.append(
+                    f"{arm} resume_time_seconds={resume['seconds']} is event-derived and reportable as an observed value."
+                )
 
     unsupported_claims: list[str] = []
     for claim in (
