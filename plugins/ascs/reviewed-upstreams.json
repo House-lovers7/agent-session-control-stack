@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "source": "config/upstreams.lock.json",
+  "verified_at": "2026-07-10",
+  "plugins": {
+    "session-health": {
+      "version": "0.3.1",
+      "revision": "80b589b9120343f33decdcbc190a7d472b4ec8d3"
+    },
+    "compact-plus": {
+      "version": "1.0.4",
+      "revision": "0f85ec8a81638683092a891e615ff3d8a04c84cc",
+      "content_integrity": {
+        "algorithm": "sha256-tree-v1",
+        "digest": "e6c5fdec1134df64968fce205f9b103cb2fa13c18de43d8bf10617cd2827bde7",
+        "file_count": 26,
+        "verified_at": "2026-07-13"
+      }
+    }
+  }
+}

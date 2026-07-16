@@ -26,6 +26,12 @@
       "revision": "0f85ec8a81638683092a891e615ff3d8a04c84cc",
       "version": "1.0.4",
       "verified_at": "2026-07-10",
+      "content_integrity": {
+        "algorithm": "sha256-tree-v1",
+        "digest": "e6c5fdec1134df64968fce205f9b103cb2fa13c18de43d8bf10617cd2827bde7",
+        "file_count": 26,
+        "verified_at": "2026-07-13"
+      },
       "reviewed_files": [
         ".claude-plugin/plugin.json",
         "README.md",

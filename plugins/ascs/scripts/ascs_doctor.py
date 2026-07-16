@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Read-only ASCS layer diagnosis with fail-closed, sanitized output."""
 
+import hashlib
 import json
 import os
 import platform
+import re
 import socket
 import subprocess
 from pathlib import Path
@@ -14,18 +16,226 @@ PXPIPE_HOST = "127.0.0.1"
 PXPIPE_PORT = 47821
 PLUGIN_LIST_LIMIT = 2 * 1024 * 1024
 SETTINGS_FILE_LIMIT = 1024 * 1024
+REVIEWED_SNAPSHOT_LIMIT = 64 * 1024
+PLUGIN_TREE_FILE_LIMIT = 2048
+PLUGIN_TREE_BYTE_LIMIT = 64 * 1024 * 1024
 PLUGIN_NAMES = ("session-health", "compact-plus")
-VALID_PLUGIN_STATES = {"ENABLED", "DISABLED", "ABSENT", "UNKNOWN"}
+VALID_PLUGIN_STATES = {
+    "ENABLED",
+    "DISABLED",
+    "ABSENT",
+    "UNKNOWN",
+    "VERSION_MISMATCH",
+    "CONTENT_MISMATCH",
+}
+PLUGIN_VERSION_RE = re.compile(
+    r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+)
+REVIEWED_SNAPSHOT_PATH = (
+    Path(__file__).resolve().parents[1] / "reviewed-upstreams.json"
+)
+CONTENT_REVIEWED_PLUGINS = frozenset({"compact-plus"})
 
 
 def say(message=""):
     print(message)
 
 
-def parse_plugin_states(payload):
+def reject_duplicate_json_keys(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON object key")
+        value[key] = item
+    return value
+
+
+def hash_plugin_tree(root):
+    """Return a deterministic content digest without following links.
+
+    sha256-tree-v1 hashes newline-delimited compact JSON records containing a
+    POSIX relative path and that file's SHA-256. Git metadata is excluded;
+    every other regular file is included. Links, special files, oversized
+    trees, and trees that change shape while being read fail closed.
+    """
+    candidate = Path(root)
+    if candidate.is_symlink():
+        raise ValueError("plugin root link is not trusted")
+    resolved = candidate.resolve(strict=True)
+    if not resolved.is_dir():
+        raise ValueError("plugin root is not a directory")
+
+    entries = []
+    total_bytes = 0
+    for path in resolved.rglob("*"):
+        relative = path.relative_to(resolved)
+        if ".git" in relative.parts:
+            continue
+        if path.is_symlink():
+            raise ValueError("plugin tree contains a link")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ValueError("plugin tree contains a special file")
+        entries.append((relative.as_posix(), path))
+        if len(entries) > PLUGIN_TREE_FILE_LIMIT:
+            raise ValueError("plugin tree has too many files")
+
+    digest = hashlib.sha256()
+    for relative, path in sorted(entries):
+        data = path.read_bytes()
+        total_bytes += len(data)
+        if total_bytes > PLUGIN_TREE_BYTE_LIMIT:
+            raise ValueError("plugin tree is too large")
+        record = json.dumps(
+            [relative, hashlib.sha256(data).hexdigest()],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        digest.update(record.encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest(), len(entries)
+
+
+def read_reviewed_plugins(path=REVIEWED_SNAPSHOT_PATH):
+    try:
+        if path.stat().st_size > REVIEWED_SNAPSHOT_LIMIT:
+            raise ValueError("reviewed upstream snapshot is too large")
+        payload = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+        if not isinstance(payload, dict) or payload.get("schema_version") != 2:
+            raise ValueError("reviewed upstream snapshot schema is invalid")
+        plugins = payload.get("plugins")
+        if not isinstance(plugins, dict) or set(plugins) != set(PLUGIN_NAMES):
+            raise ValueError("reviewed plugin names are invalid")
+        normalized = {}
+        for name in PLUGIN_NAMES:
+            entry = plugins[name]
+            if not isinstance(entry, dict):
+                raise ValueError("reviewed plugin entry must be an object")
+            version = entry.get("version")
+            revision = entry.get("revision")
+            allowed_keys = {"version", "revision", "content_integrity"}
+            if not set(entry).issubset(allowed_keys):
+                raise ValueError("reviewed plugin entry has unknown fields")
+            if not isinstance(version, str) or not PLUGIN_VERSION_RE.fullmatch(version):
+                raise ValueError("reviewed plugin version is invalid")
+            if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+                raise ValueError("reviewed plugin revision is invalid")
+            content = entry.get("content_integrity")
+            if name in CONTENT_REVIEWED_PLUGINS and not isinstance(content, dict):
+                raise ValueError("reviewed plugin content integrity is missing")
+            if content is not None:
+                if not isinstance(content, dict) or set(content) != {
+                    "algorithm",
+                    "digest",
+                    "file_count",
+                    "verified_at",
+                }:
+                    raise ValueError("reviewed plugin content integrity is invalid")
+                if content.get("algorithm") != "sha256-tree-v1":
+                    raise ValueError("reviewed plugin content algorithm is invalid")
+                if not re.fullmatch(r"[0-9a-f]{64}", str(content.get("digest", ""))):
+                    raise ValueError("reviewed plugin content digest is invalid")
+                file_count = content.get("file_count")
+                if (
+                    isinstance(file_count, bool)
+                    or not isinstance(file_count, int)
+                    or not 0 < file_count <= PLUGIN_TREE_FILE_LIMIT
+                ):
+                    raise ValueError("reviewed plugin file count is invalid")
+                if not re.fullmatch(
+                    r"[0-9]{4}-[0-9]{2}-[0-9]{2}",
+                    str(content.get("verified_at", "")),
+                ):
+                    raise ValueError("reviewed plugin integrity date is invalid")
+            normalized[name] = {
+                "version": version,
+                "revision": revision,
+                "content_integrity": content,
+            }
+        return normalized
+    except (
+        FileNotFoundError,
+        OSError,
+        UnicodeError,
+        ValueError,
+        TypeError,
+        json.JSONDecodeError,
+    ):
+        return None
+
+
+def unknown_plugin_statuses(reviewed_plugins=None):
+    reviewed_plugins = reviewed_plugins or {}
+    return tuple(
+        {
+            "name": name,
+            "state": "UNKNOWN",
+            "installed_versions": (),
+            "reviewed_version": reviewed_plugins.get(name, {}).get("version"),
+        }
+        for name in PLUGIN_NAMES
+    )
+
+
+def verify_installed_content(name, version, install_paths, expected):
+    """Return MATCH, MISMATCH, or UNKNOWN without exposing local paths."""
+    if not isinstance(expected, dict):
+        return "MATCH"
+    if not install_paths:
+        return "UNKNOWN"
+    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
+    try:
+        cache_root = (config_dir / "plugins" / "cache").resolve(strict=True)
+    except (OSError, RuntimeError):
+        return "UNKNOWN"
+
+    seen = set()
+    for raw_path in install_paths:
+        if (
+            not isinstance(raw_path, str)
+            or not raw_path
+            or len(raw_path) > 4096
+            or any(ord(char) < 32 or ord(char) == 127 for char in raw_path)
+        ):
+            return "UNKNOWN"
+        candidate = Path(raw_path)
+        if not candidate.is_absolute() or candidate.is_symlink():
+            return "UNKNOWN"
+        try:
+            resolved = candidate.resolve(strict=True)
+            relative = resolved.relative_to(cache_root)
+        except (OSError, RuntimeError, ValueError):
+            return "UNKNOWN"
+        if len(relative.parts) < 3 or relative.parts[-2:] != (name, version):
+            return "UNKNOWN"
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        try:
+            digest, file_count = hash_plugin_tree(resolved)
+        except (OSError, RuntimeError, UnicodeError, ValueError):
+            return "MISMATCH"
+        if (
+            digest != expected.get("digest")
+            or file_count != expected.get("file_count")
+        ):
+            return "MISMATCH"
+    return "MATCH"
+
+
+def parse_plugin_statuses(payload, reviewed_plugins):
     if not isinstance(payload, list):
         raise ValueError("plugin listing must be an array")
-    states = []
+    if (
+        not isinstance(reviewed_plugins, dict)
+        or set(reviewed_plugins) != set(PLUGIN_NAMES)
+    ):
+        raise ValueError("reviewed plugin snapshot is unavailable")
+    statuses = []
     for target in PLUGIN_NAMES:
         matches = []
         for item in payload:
@@ -36,33 +246,97 @@ def parse_plugin_states(payload):
                 enabled = item.get("enabled")
                 if not isinstance(enabled, bool):
                     raise ValueError("enabled must be boolean")
-                matches.append(enabled)
+                matches.append(
+                    (enabled, item.get("version"), item.get("installPath"))
+                )
+        reviewed_version = reviewed_plugins[target]["version"]
         if not matches:
-            states.append("ABSENT")
-        elif all(matches):
-            states.append("ENABLED")
-        elif not any(matches):
-            states.append("DISABLED")
+            state = "ABSENT"
+            installed_versions = ()
+        elif all(enabled for enabled, _version, _path in matches):
+            versions = [version for _enabled, version, _path in matches]
+            if not all(
+                isinstance(version, str) and PLUGIN_VERSION_RE.fullmatch(version)
+                for version in versions
+            ):
+                state = "UNKNOWN"
+                installed_versions = ()
+            else:
+                installed_versions = tuple(sorted(set(versions)))
+                if installed_versions != (reviewed_version,):
+                    state = "VERSION_MISMATCH"
+                else:
+                    integrity = verify_installed_content(
+                        target,
+                        reviewed_version,
+                        [path for _enabled, _version, path in matches],
+                        reviewed_plugins[target].get("content_integrity"),
+                    )
+                    state = {
+                        "MATCH": "ENABLED",
+                        "MISMATCH": "CONTENT_MISMATCH",
+                        "UNKNOWN": "UNKNOWN",
+                    }[integrity]
+        elif not any(enabled for enabled, _version, _path in matches):
+            state = "DISABLED"
+            installed_versions = ()
         else:
-            states.append("UNKNOWN")
-    return tuple(states)
-
-
-def plugin_states():
-    """Use Claude's supported, effective plugin listing; never guess on error."""
-    try:
-        result = subprocess.run(
-            ["claude", "plugin", "list", "--json"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=5,
-            check=False,
+            state = "UNKNOWN"
+            installed_versions = ()
+        statuses.append(
+            {
+                "name": target,
+                "state": state,
+                "installed_versions": installed_versions,
+                "reviewed_version": reviewed_version,
+            }
         )
-        if result.returncode != 0 or len(result.stdout) > PLUGIN_LIST_LIMIT:
-            raise ValueError("plugin listing unavailable")
-        return parse_plugin_states(json.loads(result.stdout))
+    return tuple(statuses)
+
+
+def parse_plugin_states(payload):
+    """Compatibility wrapper returning state labels only."""
+    reviewed_plugins = read_reviewed_plugins()
+    if reviewed_plugins is None:
+        return tuple(status["state"] for status in unknown_plugin_statuses())
+    return tuple(
+        status["state"]
+        for status in parse_plugin_statuses(payload, reviewed_plugins)
+    )
+
+
+def read_plugin_inventory():
+    """Read effective plugin state without permitting background updates."""
+    env = os.environ.copy()
+    env["DISABLE_AUTOUPDATER"] = "1"
+    result = subprocess.run(
+        ["claude", "plugin", "list", "--json"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        timeout=5,
+        check=False,
+        env=env,
+    )
+    if result.returncode != 0 or len(result.stdout) > PLUGIN_LIST_LIMIT:
+        raise ValueError("plugin listing unavailable")
+    payload = json.loads(
+        result.stdout, object_pairs_hook=reject_duplicate_json_keys
+    )
+    if not isinstance(payload, list):
+        raise ValueError("plugin listing must be an array")
+    return payload
+
+
+def plugin_statuses():
+    """Use Claude's supported, effective plugin listing; never guess on error."""
+    reviewed_plugins = read_reviewed_plugins()
+    if reviewed_plugins is None:
+        return unknown_plugin_statuses()
+    try:
+        payload = read_plugin_inventory()
+        return parse_plugin_statuses(payload, reviewed_plugins)
     except (
         FileNotFoundError,
         OSError,
@@ -72,7 +346,12 @@ def plugin_states():
         TypeError,
         json.JSONDecodeError,
     ):
-        return ("UNKNOWN", "UNKNOWN")
+        return unknown_plugin_statuses(reviewed_plugins)
+
+
+def plugin_states():
+    """Compatibility wrapper for callers that only need state labels."""
+    return tuple(status["state"] for status in plugin_statuses())
 
 
 def sanitize_base_url(raw, expected_port=PXPIPE_PORT):
@@ -201,7 +480,7 @@ def configured_producers():
                 effective_disable_all_hooks = settings["disableAllHooks"]
             else:
                 incomplete = True
-        if "allowManagedHooksOnly" in settings:
+        if is_managed and "allowManagedHooksOnly" in settings:
             if isinstance(settings["allowManagedHooksOnly"], bool):
                 effective_managed_hooks_only = settings["allowManagedHooksOnly"]
             else:
@@ -268,24 +547,53 @@ def report_compression():
         say("                  reminder: pxpipe is lossy; keep byte-exact values off allowlisted models. See docs/claude-code/pxpipe-safety.md")
 
 
+def plugin_message(status, enabled_detail):
+    state = status.get("state", "UNKNOWN")
+    name = status.get("name", "plugin")
+    if state == "ENABLED":
+        return "{} plugin: ENABLED ({})".format(name, enabled_detail)
+    if state == "DISABLED":
+        return "{} plugin: DISABLED".format(name)
+    if state == "ABSENT":
+        return "{} plugin: not present".format(name)
+    if state == "VERSION_MISMATCH":
+        installed = ", ".join(status.get("installed_versions", ()))
+        reviewed = status.get("reviewed_version")
+        return (
+            "{} plugin: VERSION MISMATCH (installed {}; reviewed {}; "
+            "stable binding UNVERIFIED)"
+        ).format(name, installed, reviewed)
+    if state == "CONTENT_MISMATCH":
+        reviewed = status.get("reviewed_version")
+        return (
+            "{} plugin: CONTENT MISMATCH (reviewed {}; "
+            "stable binding UNVERIFIED)"
+        ).format(name, reviewed)
+    return (
+        "{} plugin: UNKNOWN (Claude plugin listing, install path, content "
+        "verification, or reviewed snapshot unavailable or invalid)"
+    ).format(name)
+
+
 def report_plugins(session_health, compact_plus):
-    health_messages = {
-        "ENABLED": "session-health plugin: ENABLED (single compact decider)",
-        "DISABLED": "session-health plugin: DISABLED",
-        "ABSENT": "session-health plugin: not present",
-        "UNKNOWN": "session-health plugin: UNKNOWN (Claude plugin listing unavailable or invalid)",
-    }
-    compact_messages = {
-        "ENABLED": "compact-plus plugin: ENABLED (behavior depends on its reviewed version)",
-        "DISABLED": "compact-plus plugin: DISABLED",
-        "ABSENT": "compact-plus plugin: not present",
-        "UNKNOWN": "compact-plus plugin: UNKNOWN (Claude plugin listing unavailable or invalid)",
-    }
-    session_health = session_health if session_health in VALID_PLUGIN_STATES else "UNKNOWN"
-    compact_plus = compact_plus if compact_plus in VALID_PLUGIN_STATES else "UNKNOWN"
-    say("  2 Health        " + health_messages[session_health])
-    say("  3 Checkpoint    " + compact_messages[compact_plus])
-    say("  4 Recovery      " + compact_messages[compact_plus])
+    for status in (session_health, compact_plus):
+        if status.get("state") not in VALID_PLUGIN_STATES:
+            status["state"] = "UNKNOWN"
+    say(
+        "  2 Health        "
+        + plugin_message(
+            session_health, "reviewed version; single compact decider"
+        )
+    )
+    compact_message = plugin_message(
+        compact_plus, "reviewed version and content"
+    )
+    say("  3 Checkpoint    " + compact_message)
+    say("  4 Recovery      " + compact_message)
+    return any(
+        status["state"] in {"VERSION_MISMATCH", "CONTENT_MISMATCH"}
+        for status in (session_health, compact_plus)
+    )
 
 
 def report_single_decider(session_health, compact_plus):
@@ -298,7 +606,11 @@ def report_single_decider(session_health, compact_plus):
             conflict = True
             say("  CONFLICT: compact-warn producer found in {} while both compact decider layers are enabled.".format(summary))
             say("            Remove the marker producer to restore the single-decider composition (architecture.md §4).")
-        elif session_health == "UNKNOWN" or compact_plus == "UNKNOWN" or settings_incomplete:
+        elif (
+            session_health in {"UNKNOWN", "VERSION_MISMATCH", "CONTENT_MISMATCH"}
+            or compact_plus in {"UNKNOWN", "VERSION_MISMATCH", "CONTENT_MISMATCH"}
+            or settings_incomplete
+        ):
             say("  WARNING: compact-warn producer found in {}, but effective state is incomplete; potential conflict not cleared.".format(summary))
         else:
             say("  WARNING: compact-warn producer found in {}, but the two relevant plugins are not both enabled.".format(summary))
@@ -315,17 +627,19 @@ def report_single_decider(session_health, compact_plus):
 
 
 def main():
-    session_health, compact_plus = plugin_states()
+    session_health, compact_plus = plugin_statuses()
+    session_health_state = session_health["state"]
+    compact_plus_state = compact_plus["state"]
     say("ASCS doctor (read-only) — layer status")
     say()
     report_compression()
-    report_plugins(session_health, compact_plus)
+    plugin_mismatch = report_plugins(session_health, compact_plus)
     say()
-    conflict = report_single_decider(session_health, compact_plus)
+    conflict = report_single_decider(session_health_state, compact_plus_state)
     say()
-    say("Layers are independently adoptable; absent, disabled, and unknown states are informational unless a confirmed conflict is shown.")
+    say("Layers are independently adoptable; version/content mismatch and confirmed conflict are actionable failures. Absent, disabled, and unknown states remain informational.")
     say("Upstream credits: pxpipe (teamchong), claude-code-session-health (House-lovers7), compact-plus (u-ichi) — see ATTRIBUTION.md.")
-    return 1 if conflict else 0
+    return 1 if conflict or plugin_mismatch else 0
 
 
 if __name__ == "__main__":

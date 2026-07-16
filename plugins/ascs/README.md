@@ -5,6 +5,7 @@ Read-only doctor for the [Agent Session Control Stack](https://github.com/House-
 One command, `/ascs:doctor`, which reports:
 
 - which of the 4 layers (Compression / Health Detection / Checkpoint / Recovery) are active in this environment
+- whether enabled upstream plugins exactly match the versions reviewed in `config/upstreams.lock.json`; compact-plus also gets a full cached-tree content check (through the packaged, CI-synchronized `reviewed-upstreams.json` snapshot)
 - whether the **single-compact-decider** rule holds (no compact-warn marker producer wired in)
 - the pxpipe lossy-boundary reminder when the proxy is listening
 
