@@ -1,0 +1,43 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "^(manual|auto)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/ascs_compact.py\"",
+            "timeout": 10,
+            "statusMessage": "Recording ASCS compact boundary"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "^(manual|auto)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/ascs_compact.py\"",
+            "timeout": 10,
+            "statusMessage": "Closing ASCS compact boundary"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "^compact$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/ascs_compact.py\"",
+            "timeout": 10,
+            "statusMessage": "Loading ASCS recovery guard"
+          }
+        ]
+      }
+    ]
+  }
+}
