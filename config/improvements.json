@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "workflow": "docs/improvement-loop.md",
+  "template": "templates/improvement-entry.md",
+  "items": [
+    {
+      "id": "IMP-001",
+      "title": "Reject invalid experiment evidence before record append",
+      "severity": "P0",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: full 205-test suite and repository validation.",
+      "evidence": "Focused RED proved missing metadata, missing events, malformed JSONL, and duplicate metadata keys could cross the append boundary before the fix.",
+      "assets": ["scripts/ascs.py", "tests/test_ascs.py"],
+      "verification": "python3 -B -m unittest tests.test_ascs",
+      "next_gate": "reopen on any evidence append regression"
+    },
+    {
+      "id": "IMP-002",
+      "title": "Do not license ASCS claims from unrelated events",
+      "severity": "P0",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: full 205-test suite and repository validation.",
+      "evidence": "Pure-function RED showed no ASCS evidence and an allowed validation claim at the same time.",
+      "assets": ["scripts/ascs.py", "tests/test_ascs.py"],
+      "verification": "python3 -B -m unittest tests.test_ascs",
+      "next_gate": "reopen on any unsupported-claim regression"
+    },
+    {
+      "id": "IMP-003",
+      "title": "Honor allowManagedHooksOnly only in managed settings",
+      "severity": "P1",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: full 205-test suite and repository validation.",
+      "evidence": "Doctor RED reproduced a false no-conflict result from a project-local managed-only key.",
+      "assets": ["plugins/ascs/scripts/ascs_doctor.py", "tests/test_ascs_doctor.py"],
+      "verification": "python3 -B -m unittest tests.test_ascs_doctor",
+      "next_gate": "reopen on any Doctor scope-precedence regression"
+    },
+    {
+      "id": "IMP-004",
+      "title": "Reject negative experiment metrics at the CLI boundary",
+      "severity": "P2",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: full 205-test suite and repository validation.",
+      "evidence": "Experiment 004 and 005 parsers accepted negative missed-item and correction counts.",
+      "assets": ["scripts/exp004.py", "scripts/exp005.py", "tests/test_exp004.py", "tests/test_exp005.py"],
+      "verification": "python3 -B -m unittest tests.test_exp004 tests.test_exp005",
+      "next_gate": "reopen if any metric CLI accepts a negative count"
+    },
+    {
+      "id": "IMP-005",
+      "title": "Add an explicit paid-runtime cost gate to Experiment 005",
+      "severity": "P1",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: full 205-test suite and repository validation; no paid arm executed.",
+      "evidence": "Experiment 004 stopped for resource sustainability while Experiment 005 had no budget ceiling.",
+      "assets": ["scripts/exp005.py", "tests/test_exp005.py", "docs/experiment-005-design.md", "docs/risk-register.md"],
+      "verification": "python3 -B -m unittest tests.test_exp005",
+      "next_gate": "human approval before every paid arm"
+    },
+    {
+      "id": "IMP-006",
+      "title": "Machine-check the current implementation phase",
+      "severity": "P1",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: full 205-test suite and repository validation.",
+      "evidence": "The historical phase plan described Doctor and Measurement as future work despite existing implementations.",
+      "assets": ["docs/implementation-plan.md", "scripts/validate_repo.py", "tests/test_validate_repo.py"],
+      "verification": "python3 -B scripts/validate_repo.py --require-upstream-lock",
+      "next_gate": "reopen if implementation status and executable assets drift"
+    },
+    {
+      "id": "IMP-007",
+      "title": "Narrow PostCompact risk to the remaining runtime binding",
+      "severity": "P2",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: documentation and repository validation; runtime smoke remains the next gate.",
+      "evidence": "Current official hooks documentation confirms manual and auto PostCompact matchers.",
+      "assets": ["docs/risk-register.md", "docs/upstream-compatibility.md"],
+      "verification": "python3 -B scripts/validate_repo.py --require-upstream-lock",
+      "next_gate": "manual and auto compact runtime smoke before stable binding claim"
+    },
+    {
+      "id": "IMP-008",
+      "title": "Consolidate duplicated experiment helper infrastructure",
+      "severity": "P1",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: full 205-test suite including pair transaction failure injection.",
+      "evidence": "Experiment 004 and 005 duplicated Git, hash, note parsing, and pair transaction behavior.",
+      "assets": ["scripts/experiment_common.py", "scripts/exp004.py", "scripts/exp005.py", "tests/test_exp004.py", "tests/test_exp005.py"],
+      "verification": "python3 -B -m unittest tests.test_exp004 tests.test_exp005",
+      "next_gate": "reopen if experiment helpers diverge or transaction tests regress"
+    },
+    {
+      "id": "IMP-009",
+      "title": "Fail closed on installed upstream plugin version drift",
+      "severity": "P1",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: full 205-test suite and repository validation; real Doctor first rejected installed 1.0.3, then returned success after the explicitly approved user-scope update to reviewed 1.0.4.",
+      "evidence": "The local Claude plugin inventory reported compact-plus 1.0.3 while the stable repository contract reviews 1.0.4, but Doctor previously reported the layer as enabled without qualification.",
+      "assets": ["plugins/ascs/reviewed-upstreams.json", "plugins/ascs/scripts/ascs_doctor.py", "tests/test_ascs_doctor.py", "scripts/validate_repo.py", "tests/test_validate_repo.py", "docs/upstream-compatibility.md", "docs/user-guide.md"],
+      "verification": "python3 -B -m unittest tests.test_ascs_doctor tests.test_validate_repo",
+      "next_gate": "manual and auto PostCompact runtime smoke under a separate paid-runtime approval"
+    },
+    {
+      "id": "IMP-010",
+      "title": "Attest reviewed compact-plus content instead of trusting SemVer alone",
+      "severity": "P1",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: full 205-test suite, repository validation, fixed-source/cache digest equality, and real Doctor exit 0.",
+      "evidence": "Version-only Doctor checks could not detect same-version cache modification, and Claude installed_plugins.json retained the prior v1.0.3 gitCommitSha after updating to v1.0.4. The pinned v1.0.4 source and installed cache matched byte-for-byte across all 26 non-git files, so their deterministic tree digest is now the reviewed trust anchor.",
+      "assets": ["config/upstreams.lock.json", "plugins/ascs/reviewed-upstreams.json", "plugins/ascs/scripts/ascs_doctor.py", "tests/test_ascs_doctor.py", "scripts/validate_repo.py", "tests/test_validate_repo.py", "docs/upstream-compatibility.md", "docs/user-guide.md", "docs/user-guide.ja.md", "docs/risk-register.md"],
+      "verification": "python3 -B -m unittest tests.test_ascs_doctor tests.test_validate_repo && python3 -B scripts/validate_repo.py --require-upstream-lock",
+      "next_gate": "add a no-paid synthetic manual/auto marker smoke before any separately approved real Claude runtime smoke"
+    },
+    {
+      "id": "IMP-011",
+      "title": "Assetize a no-model manual/auto compact-plus recovery smoke",
+      "severity": "P1",
+      "status": "verified",
+      "verified_at": "2026-07-13",
+      "verification_result": "PASS: full 205-test suite, repository validation, and installed reviewed compact-plus 1.0.4 synthetic manual/auto smoke.",
+      "evidence": "Static registration and content checks did not execute the marker/recovery contract. The isolated synthetic smoke now proves marker creation, cooldown clearing, one-shot recovery injection, and summary non-reinjection for both triggers without invoking a model, API, or PreCompact hook.",
+      "assets": ["scripts/smoke_compact_plus.py", "tests/test_compact_plus_smoke.py", "docs/compact-plus-synthetic-smoke.md", "plugins/ascs/scripts/ascs_doctor.py", "tests/test_ascs_doctor.py", "scripts/validate_repo.py", "tests/test_validate_repo.py", ".github/workflows/test.yml", "docs/upstream-compatibility.md", "docs/risk-register.md", "docs/measurement-checklist.md", "docs/user-guide.md", "docs/user-guide.ja.md"],
+      "verification": "python3 -B -m unittest tests.test_compact_plus_smoke tests.test_ascs_doctor tests.test_validate_repo && python3 -B scripts/smoke_compact_plus.py && python3 -B scripts/validate_repo.py --require-upstream-lock",
+      "next_gate": "real manual and auto Claude Code runtime dispatch smoke after manual authentication and separate paid-runtime approval"
+    }
+  ]
+}
