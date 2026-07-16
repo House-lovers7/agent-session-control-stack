@@ -6,21 +6,21 @@
 
 ## Day 1: 起動と全体像
 
-1. install候補: install command未検出
-2. 最初の実行/検査: `検証command未検出`
+1. READMEでClaude plugin導入とCodex example copy/mergeの違いを確認
+2. 最初の実行/検査: `python3 scripts/ascs.py doctor` と `python3 -m unittest discover tests -v`
 3. `scripts` を読み、CLI・バッチ・運用入口の境界を確認
 
 
 ## Day 2–3: 主要契約
 
-- APIがない/未検出であることを確認
-- `scripts/exp004.py` の 1 entityとmigration順序を確認
+- HTTP APIと永続DBを提供しないCLI/hook productであることを確認
+- `scripts/ascs.py` のevidence schemaとclaim boundaryを確認
 - CLI/API/docs入口の成功・失敗フィードバックを確認
 - external/config: 外部integration未検出 / CLAUDE_CONFIG_DIR, CLAUDE_PROJECT_DIR, TMPDIR, ANTHROPIC_BASE_URL, PATH
 
 ## 最初の変更前
 
-- 変更対象に最も近いtest: `tests/test_exp004.py`, `tests/test_exp005.py`, `tests/test_ascs.py`, `tests/test_check_state.py`, `tests/test_validate_repo.py`, `tests/test_compact_plus_smoke.py`, `tests/test_ascs_doctor.py`, `tests/test_exp003.py`
+- 変更対象に最も近いtest: `tests/test_codex_compact_hook.py`, `tests/test_ascs.py`, `tests/test_check_state.py`, `tests/test_validate_repo.py`, `tests/test_ascs_doctor.py`
 - 既存ADR/docs: `README.md`, `README.ja.md`, `plugins/ascs/README.md`, `experiments/README.md`, `experiments/2026-07-06-claude-code-restart-004-shared-scaffold/README.md`, `experiments/2026-07-11-claude-code-restart-005-shared-scaffold/README.md`, `docs/hook-responsibilities.md`, `docs/architecture.md`, `docs/user-guide.ja.md`, `docs/claude-code-reference-integration.md`, `docs/measurement-harness.md`, `docs/acceptance-criteria.md`
 - runtime: config (`.github/workflows/test.yml`)
 - `07_traceability.md` の未確認事項をcloseまたはrisk acceptしてから変更する。

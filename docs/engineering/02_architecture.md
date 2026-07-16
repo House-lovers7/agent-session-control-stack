@@ -11,8 +11,10 @@ flowchart LR
     User["利用者 / Operator"]
     User --> System["Project boundary"]
     System --> C1_scripts["scripts\nscripts"]
-    System --> Data[("1 entities\nscripts/exp004.py")]
-    Tests["Tests: 8 files"] -. verifies .-> System
+    System --> Doctor["Read-only Doctor"]
+    System --> Evidence["Experiment evidence\nJSON / JSONL / Markdown"]
+    System --> Codex["Codex native compact hook"]
+    Tests["Tests: 9 files"] -. verifies .-> System
 ```
 
 ## 配備・実行構成
@@ -36,13 +38,13 @@ flowchart TB
 
 ## 実装境界
 
-- UI/入口: UI route未検出
-- API: API route未検出
-- Data: `scripts/exp004.py`, `scripts/exp005.py`
-- External: integration名を静的検出できず
+- UI/HTTP API: 非提供（CLI・plugin command・hookが公開面）
+- CLI: `scripts/ascs.py`, `scripts/check_state.py`, experiment helpers
+- Hook/plugin: `plugins/ascs/`, `examples/codex/.codex/`
+- Data: local JSON/JSONL/Markdown evidenceのみ。永続DBなし
 
 ## セキュリティ境界
 
-- 認証・回復性の実装シグナル: auth/session (`plugins/ascs/scripts/ascs_doctor.py`), resilience (`plugins/ascs/scripts/ascs_doctor.py`), auth/session (`tests/test_exp004.py`), tenant/RLS (`tests/test_exp004.py`), auth/session (`tests/test_exp005.py`), tenant/RLS (`tests/test_exp005.py`), auth/session (`tests/test_ascs.py`), auth/session (`tests/test_check_state.py`), auth/session (`tests/test_validate_repo.py`), auth/session (`tests/test_ascs_doctor.py`), resilience (`tests/test_ascs_doctor.py`), auth/session (`tests/test_exp003.py`)
+- セキュリティ境界: read-only Doctor、state metadata/secret検査、hook trust、evidence fail-closed、外部送信と課金のHuman Approval Gate
 - 設定名: CLAUDE_CONFIG_DIR, CLAUDE_PROJECT_DIR, TMPDIR, ANTHROPIC_BASE_URL, PATH（値は収集していない）
 - deploy、migration、外部送信、課金はHuman Approval Gate対象。

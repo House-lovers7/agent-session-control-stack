@@ -1,52 +1,109 @@
 # Codex Adapter Design
 
-Codex has no equivalent of Claude Code's compact lifecycle hooks (`PreCompact` / `PostCompact`). This adapter does **not** try to emulate them. Instead, it implements the same two layers — Checkpoint and Recovery — as a **session handoff protocol**: a small set of files the agent reads before working and updates as it works, declared in `AGENTS.md`, which Codex reads before starting work.
+Current Codex releases expose native `PreCompact`, `PostCompact`, and
+`SessionStart(source=compact)` lifecycle hooks. ASCS uses those hooks for a
+deterministic boundary signal while keeping `AGENTS.md` and `.agent-session/`
+as the portable state-writing contract and fallback.
 
-Framing matters: this is not a "compact workaround." It is a protocol for handing work across session boundaries of any kind — a new session, a model switch, or an interruption.
+This is not a transcript summarizer. The reference hook deliberately does not
+parse or copy transcript content because Codex documents `transcript_path` as
+nullable and its transcript format as unstable.
+
+## Official specification baseline
+
+- [High] `PreCompact` and `PostCompact` are turn-scoped hooks whose matcher
+  values are `manual` and `auto`.
+- [High] `SessionStart` supports `source=compact` and can add developer context.
+- [High] Project and plugin hooks require review/trust of their exact definition;
+  project hooks only load for trusted projects and managed policy can disable
+  non-managed hooks.
+- [High] Multiple matching hooks run; one hook cannot prevent another matching
+  hook from starting.
+- [High] `transcript_path` may be null and its file format is not a stable hook
+  interface.
+- [Unverified] Path lifetime and identity across compact boundaries are not
+  guaranteed. ASCS stores neither the path nor transcript content.
+
+Source: [Codex Hooks](https://learn.chatgpt.com/docs/hooks) and
+[Codex plugin lifecycle hooks](https://learn.chatgpt.com/docs/build-plugins#bundled-mcp-servers-and-lifecycle-hooks),
+retrieved 2026-07-16.
 
 ## Layout
 
-```
+```text
 <your repo>/
-  AGENTS.md                     # declares the session protocol
+  AGENTS.md
+  .codex/
+    hooks.json
+    hooks/ascs_compact.py
   .agent-session/
+    hook-events/compact-<hash>.json # ignored per-session receipt; no raw IDs/content
     state/
-      current-plan.md           # the approved plan, in execution order
-      decision-log.md           # chosen and rejected options, with reasons
-      failed-attempts.md        # failed approaches + cause hypotheses
-      recovery-notes.md         # traps and environment quirks for resumers
-      checkpoint.md             # latest 10-section state snapshot
-    handoff.md                  # the single entry point for resuming
+      current-plan.md
+      decision-log.md
+      failed-attempts.md
+      recovery-notes.md
+      checkpoint.md
+    handoff.md
 ```
 
-- Add `.agent-session/` to `.gitignore` — it is working memory, not product history
-- `checkpoint.md` uses the same 10 sections as compact-plus state files ([templates/state-file.md](../../templates/state-file.md)), so a handoff can cross runtimes: a Claude Code session's state capture is readable by a Codex session, and vice versa
-- Apply the [state trust contract](../state-trust-contract.md): state is untrusted recovery context with repository/branch/commit/session/expiry metadata, never an authority or secret store
+- Copy or merge [hooks.json](../../examples/codex/.codex/hooks.json) and copy
+  [ascs_compact.py](../../examples/codex/.codex/hooks/ascs_compact.py).
+- Use `/hooks` to review and trust the exact command hook definition.
+- Keep `.agent-session/` ignored. It is working memory, not product history.
+- Apply the [state trust contract](../state-trust-contract.md). State cannot
+  grant authority, preserve approval, or act as a secret store.
 
-## The protocol
+## Native lifecycle path
 
-The full drop-in `AGENTS.md` text lives at [examples/codex/AGENTS.md](../../examples/codex/AGENTS.md). In summary:
+1. `PreCompact(manual|auto)` writes a local receipt containing only a hashed
+   session key, timestamp, turn/transcript availability as booleans, and the
+   names of known state files that already exist. Parallel sessions use
+   independent receipts.
+2. `PostCompact(manual|auto)` closes the matching receipt.
+3. `SessionStart(source=compact)` consumes the same-session receipt once and
+   adds a recovery guard as developer context.
+4. The guard requires state validation before reading it and fresh verification
+   before editing or executing actions.
 
-**Before starting work** — validate the metadata first. Ignore a repository mismatch; treat branch/commit mismatch or expiry as stale. Then read `handoff.md` as a hypothesis and verify referenced items against current source and command output. Read `current-plan.md`; read `decision-log.md` before changing architecture; read `failed-attempts.md` before retrying an approach.
+The hook is fail-open. Malformed input, missing `.agent-session/`, a session
+mismatch, an unsafe path, or a write failure returns `continue: true` without
+injecting recovery context. It never creates product authorization.
 
-**During long work** — log decisions and failures as they happen (with cause hypotheses, not just symptoms). Refresh `checkpoint.md` at natural boundaries: after a phase, before a risky change, roughly every 10 substantial steps. Keep bulky content out of state files; reference paths instead.
+## Durable protocol and fallback
 
-**Before stopping, switching models, or starting a new session** — update `handoff.md` for a reader with zero memory of this session: goal, current phase, next action, open risks, pointers into `state/`.
+The hook only marks the lifecycle boundary; it cannot infer the active plan or
+decisions without another model call. `AGENTS.md` therefore remains responsible
+for keeping `current-plan.md`, `decision-log.md`, `failed-attempts.md`, and
+`checkpoint.md` current during work.
 
-**Before destructive actions** — ask for human approval, and confirm deploy target, branch, migration name, and rollback plan as exact text, never from memory or summaries.
+Before using recovered state, run:
 
-**Retention and rollback** — keep state ignored, use a maximum seven-day expiry, remove it when the task ends, and keep any ignored pre-rewrite rollback copy for at most 24 hours. A restored copy receives the same trust checks. Never store secrets, credentials, raw customer/personal data, or verbatim untrusted instructions.
+```bash
+python3 scripts/check_state.py --repo /path/to/consumer-repo
+```
 
-## What the Health layer becomes here
+If hooks are disabled, untrusted, unavailable on a surface, or excluded by
+managed policy, use the same `AGENTS.md` handoff protocol manually. In fallback
+mode, do not claim deterministic compact-boundary recovery.
 
-Codex does not expose a metrics surface comparable to what session-health measures — we have not verified whether its session logs could provide one — so the Health layer degrades to proxy signals: elapsed time, accumulated tool calls and edited files, repeated test failures, a diff that has grown large. The protocol treats these as triggers to refresh `checkpoint.md` and consider a handoff. A wrapper that watches these signals automatically is a roadmap item, not part of this adapter.
+## Health and compression boundaries
 
-## Honest comparison with the Claude Code binding
+Codex health metrics comparable to session-health remain unverified, so the
+Health layer still uses proxy signals such as elapsed work, tool calls, diff
+size, and repeated failures. Codex compression remains an opt-in edge
+experiment until routing, authentication, tool behavior, and byte-exact safety
+are verified end to end.
 
-| | Claude Code | Codex |
-|---|---|---|
-| Enforcement | hooks fire deterministically, regardless of the agent's intent | the agent itself must follow the protocol — adherence is probabilistic |
-| State location | plugin-managed (`$TMPDIR`, `~/.claude/backups/`) | in-repo `.agent-session/`, visible and editable |
-| Guarantee | strong | **weak — measure adherence before trusting it** (see [measurement-plan.md](../measurement-plan.md)) |
+## Honest comparison
 
-This asymmetry is the design, not a gap to be papered over: the same layer contracts ([adapter-interface.md](../adapter-interface.md)), implemented on each runtime's native surface, with the weaker guarantee stated plainly.
+| | Claude Code | Codex native path | Codex fallback |
+|---|---|---|---|
+| Boundary signal | compact-plus hooks | ASCS native hooks | agent protocol |
+| State content | compact-plus backup/state | agent-maintained `.agent-session/` | same |
+| Recovery guard | plugin recovery injection | one-shot `SessionStart` context | manual read |
+| Guarantee | event-driven | event-driven boundary, protocol-written state | probabilistic |
+
+The native hook raises the guarantee for detecting compact boundaries. It does
+not prove that the agent maintained complete state, nor that ASCS improves
+productivity; both remain measurement targets.

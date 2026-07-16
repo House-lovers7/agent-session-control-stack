@@ -19,6 +19,7 @@
 | test | `tests/test_compact_plus_smoke.py` | 静的確認済み |
 | test | `tests/test_ascs_doctor.py` | 静的確認済み |
 | test | `tests/test_exp003.py` | 静的確認済み |
+| test | `tests/test_codex_compact_hook.py` | 静的確認済み |
 | quality/CI | `.github/workflows/test.yml` | 静的確認済み |
 | existing docs | `README.md` | 静的確認済み |
 | existing docs | `README.ja.md` | 静的確認済み |
@@ -53,7 +54,9 @@
 
 ## 検出した検証command
 
-- manifestから標準command未検出
+- `python3 -m unittest discover tests -v`
+- `python3 scripts/validate_repo.py --require-upstream-lock`
+- `python3 scripts/ascs.py doctor`
 
 ## 設定契約（名前のみ）
 

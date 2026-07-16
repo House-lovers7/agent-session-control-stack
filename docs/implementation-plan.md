@@ -1,6 +1,33 @@
 # Implementation Plan — フェーズ分割と分担
 
-> Phase 0 設計原本 / **内部の作業計画メモ**（authoring workflow）。公開ドキュメントの正典は README と docs/claude-code/・docs/codex/。実装は行わず、各フェーズの成果物・担当・停止条件を定義する。
+> Phase 0 設計原本 / **内部の作業計画メモ**（authoring workflow）。公開ドキュメントの正典は README と docs/claude-code/・docs/codex/。本書は当初計画と現在地を分離し、各フェーズの成果物・担当・停止条件を定義する。
+
+## Current implementation status (2026-07-13)
+
+- **Phase 1 reference architecture: implemented.** README、runtime別adapter、
+  examples、templatesが公開可能な形で存在する。
+- **Phase 2 measurement harness: implemented.** `scripts/ascs.py`の手動記録、
+  scoring、claim-boundary measurementとExperiment 002–004の履歴がある。
+- **Install-state Doctor: implemented early as a safety diagnostic.** 効果実証後の
+  製品化としてではなく、二重compact提案・routing不備・設定ドリフトを実験前に
+  検出する安全ゲートとして先行実装した。
+- **Synthetic compact-plus recovery smoke: implemented.** content-attestedな
+  PostCompact markerと次promptの1回注入を隔離manual/auto入力で検査する。
+  Claude runtime dispatch、PreCompact、効果は未検証のまま分離する。
+- **Codex native compact-hook reference: implemented locally.** 2026-07-16の
+  公式Hooks仕様へ追従し、PreCompact/PostCompact receiptと
+  SessionStart(source=compact)のone-shot recovery guardを追加した。
+  AGENTS.md protocolはstate本文更新とhook無効時のfallbackとして残す。
+- **Automated benefit measurement: not implemented.** transcript自動収集、
+  dashboard、因果推定、無人before/after集計は提供しない。
+- **Full-stack composition benefit: unvalidated.** mechanismの同時発火はdogfoodで
+  確認済みだが、生産性・速度・費用・品質の改善効果は有効な比較実験を得るまで
+  未実証として扱う。
+
+この先行実装は、当初のPhase 4–6を完了扱いにする例外ではない。Evidenceを安全に
+集め、過大claimを拒否するための最小診断だけをPhase 2へ前倒しした。Config
+generator、無人Doctor、automated benefit measurement、外部提案は、Phase 2の
+撤退基準をクリアするまで着手判断を保留する。
 
 ## 0. 分担原則
 
@@ -57,7 +84,7 @@ agent-session-control-stack/
 ## Phase 2: 自リポジトリでの検証（Codex 実行、測定は measurement-plan.md）
 
 - 実プロジェクト 1〜2 セッションで stack を運用し、compact 後の迷走・手戻り・復旧時間・却下案再提案を記録
-- Codex 側: AGENTS.md protocol の遵守率（checkpoint 更新が実際に起きた回数 / トリガー該当回数）を記録
+- Codex 側: native hook発火率、one-shot receipt消費率、AGENTS.md protocolによるcheckpoint本文更新率を分けて記録
 - 成果物: templates の experiment report 形式による測定ログ（Phase 4 で repo に追記）
 
 ## Phase 3: 設計レビューと発信準備（Fable）

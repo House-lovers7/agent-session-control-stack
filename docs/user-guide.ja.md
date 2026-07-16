@@ -97,25 +97,49 @@ alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 ### `/ascs:doctor` の出力の読み方
 
 ```text
-  1 Compression   pxpipe proxy: not listening on 127.0.0.1:47821 (layer inactive — optional, opt-in)
-  2 Health        session-health plugin: INSTALLED (single compact decider)
-  3 Checkpoint    compact-plus plugin: INSTALLED (transcript backup + state capture on PreCompact)
-  4 Recovery      compact-plus plugin: INSTALLED (recovery injection after compaction)
+  1 Compression   no listener at 127.0.0.1:47821 (layer inactive — optional, opt-in)
+  2 Health        session-health plugin: ENABLED (reviewed version; single compact decider)
+  3 Checkpoint    compact-plus plugin: ENABLED (reviewed version and content)
+  4 Recovery      compact-plus plugin: ENABLED (reviewed version and content)
 
-  Single-decider rule: OK (no compact-warn marker producer detected; ...)
+  Single-decider rule: NO CONFIRMED CONFLICT in inspected local and file-managed settings
 ```
 
 - **「not installed」「not listening」は情報表示であってエラーではありません** — 各層は単体で導入・撤去できます。
-- Exit code `0` = 衝突なし。`1` = single-decider の **CONFLICT**（compact-warn marker の生成器が有効で、2 つのコンポーネントが compact を助言している状態 — 生成器を撤去してください）。
+- **`VERSION MISMATCH` は導入版がレビュー済み版と異なることを示します。** 固定版を意図的に採用して Doctor を再実行するまで、Checkpoint/Recovery は未検証です。
+- **`CONTENT MISMATCH` は版番号が一致していても compact-plus の cache 内容がレビュー済み digest と異なることを示します。** 内容を確認するか意図的に再導入し、Doctor を再実行するまで未検証として扱います。
+- Exit code `0` = 確認済み衝突および version/content mismatch なし。`1` = version/content mismatch または single-decider の **CONFLICT**（compact-warn marker の生成器が有効で、2 つのコンポーネントが compact を助言している状態 — 生成器を撤去してください）。
 - pxpipe が listen 中なら、doctor は**このセッション**が実際に proxy を経由しているか（`ANTHROPIC_BASE_URL`）も教えてくれます。
+
+Doctor が compact-plus のreviewed version/content一致を確認した後、無課金の合成復旧契約を検査できます。
+
+```bash
+python3 -B scripts/smoke_compact_plus.py
+```
+
+隔離した一時領域で合成 `manual` / `auto` のmarker・復旧経路だけを実行します。Claude、PreCompact、モデル/API、実セッションファイルは使わず、Claude Codeによるruntime dispatchの証明にはしません。境界の詳細は[synthetic smoke contract](compact-plus-synthetic-smoke.md)を参照してください。
 
 ## 5. Codex で使う
 
-Codex には compaction hook が無いため、層 3+4 はプラグイン自動化ではなく **handoff protocol** になります — hook より弱い保証（決定論的実行ではなく protocol 遵守）であり、そのことを明記しています。
+現行Codexは `PreCompact`、`PostCompact`、
+`SessionStart(source=compact)` hookを提供します。そのためASCSはnative-hook
+reference adapterを提供し、handoff protocolはstate更新契約とfallbackとして残します。
 
-1. [examples/codex/AGENTS.md](../examples/codex/AGENTS.md) をプロジェクトにコピーまたは適応します。
-2. `.agent-session/` ディレクトリを作ります。
-3. protocol により、エージェントは作業前に `handoff.md` と state ファイルを読み、作業中に決定と失敗試行を記録し、停止前に handoff を書きます。
+1. `examples/codex/.codex/hooks.json` をprojectへコピーまたはmergeします。
+2. `examples/codex/.codex/hooks/ascs_compact.py` を同じ相対pathへコピーします。
+3. `/hooks` でexact hook definitionを確認しtrustします。
+4. [examples/codex/AGENTS.md](../examples/codex/AGENTS.md) を適応し、`.agent-session/` を作ります。
+
+hookはtranscript本文を解析・複製しません。`PreCompact`が内容を最小化したreceiptを
+記録し、`PostCompact`が境界を閉じ、`SessionStart(source=compact)`が1回限りの
+recovery guardを追加します。guardはstateを読む前の検査と、current sourceによる
+回復内容の再検証を要求します。
+
+project hookはtrusted projectでのみloadされ、userまたはmanaged policyで無効にできます。
+その場合はmanual handoff protocolを使い、決定論的compact recoveryを主張しません。
+
+protocolにより、エージェントは作業前に `handoff.md` とstateファイルを読み、
+作業中に決定と失敗試行を記録し、停止前にhandoffを書きます。
 
 前セッションが残した live state を読む前に、read-only 検査を実行してください — `.agent-session/` は未信頼の復旧 context であり、指示チャネルではありません:
 

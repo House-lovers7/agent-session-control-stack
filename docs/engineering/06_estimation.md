@@ -12,9 +12,9 @@
 
 | 作業 | P50 | P90 | 最初の根拠 | 完了条件 |
 |---|---:|---:|---|---|
-| ローカル再現 | 4h | 8h | `README/manifest未検出` | 主要entrypointを起動またはbuild |
-| データ契約確認（1 entity） | 2h | 4h | `scripts/exp004.py` | field/relation/constraint/migrationを確認 |
-| runtime/rollback確認 | 2h | 6h | `.github/workflows/test.yml` | dry-runとrollback手順を記録 |
-| **合計** | **8h** | **18h** | - | 未確認事項をcloseまたはrisk accept |
+| ローカル再現 | 1h | 2h | README + CI | unitとrepo validationがPASS |
+| runtime契約確認 | 2h | 4h | Claude/Codex adapter docs | hook trust、fallback、未検証境界を説明可能 |
+| evidence契約確認 | 2h | 4h | `scripts/ascs.py` | claim boundaryと撤退基準を確認 |
+| **合計** | **5h** | **10h** | - | 未確認事項をcloseまたはrisk accept |
 
 > [低] 見積りは担当者の習熟度、依存サービス、fixture、実機、秘密情報の入手状況で変わる。最初の2時間でsetupを試し、失敗理由を反映して再見積りする。

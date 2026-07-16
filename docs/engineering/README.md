@@ -6,11 +6,11 @@
 
 ## 60分で把握する
 
-1. コンセプト: 長時間AIコーディングエージェント運用の参照アーキテクチャmeta-repo。pxpipe/session-health/compact-plusを置き換えずCompression/Health/Checkpoint/Recoveryの4層に責務分離し、Claude Codeはhooks/plugin、CodexはAGENTS.md+state+handoff protocolで実装する設計を文書化。コード非同梱・docs-only。
-2. classification: `active_project` / stack: runtime未特定
-3. install: install command未検出
-4. run/check: manifest script未検出
-5. entrypoint: entrypoint未検出
+1. コンセプト: 長時間AIコーディングエージェント運用をCompression/Health/Checkpoint/Recoveryへ分離し、Claude Codeはupstream plugins、Codexはnative hooks + portable state protocolで実装するreference stack。
+2. classification: `active_project` / stack: Python標準ライブラリ中心のCLI・hook・docs
+3. install: READMEのClaude marketplace手順、またはCodex exampleの手動copy/merge
+4. run/check: `python3 -m unittest discover tests -v`、`python3 scripts/validate_repo.py --require-upstream-lock`
+5. entrypoint: `scripts/ascs.py`、`scripts/check_state.py`、`plugins/ascs/scripts/ascs_doctor.py`、Codex compact hook example
 
 ## 実装スナップショット
 
@@ -20,7 +20,7 @@
 | API | 0 | 未検出 |
 | entity | 1 | `scripts/exp004.py` |
 | screen/entry UI | 0 | 未検出 |
-| test files | 8 | `tests/test_exp004.py` |
+| test files | 9 | `tests/test_codex_compact_hook.py` |
 
 ## 最初に確認する既存の正典候補
 
@@ -61,10 +61,8 @@
 
 | Priority | Requirement | 状態・理由 | Evidence |
 |---|---|---|---|
-| P1 | `entrypoints` | missing: 実行entrypointを特定できない。資料/資産なら「実行物なし」の明記が必要。 | `docs/engineering/README.md` |
-| P1 | `major_modules_and_packages` | partial: package/moduleはあるが、責務、依存方向、公開境界、影響範囲が不足。 | `config/` |
-| P1 | `observability` | missing: 可観測性の実装証拠を特定できない。生成文書の一般要件・提案は現行実装の証拠ではない。 | `ATTRIBUTION.md` |
-| P1 | `startup_and_verification_commands` | missing: 起動・検証commandを静的証拠から特定できず、生成文書にも実行可能な手順がない。 | `README.md` |
+| P1 | `codex_runtime_smoke` | native hookのfocused testはあるが、実Codex manual/auto compact dispatchは未検証。 | `docs/codex/adapter-design.md` |
+| P1 | `composition_efficacy` | mechanism smokeはあるが、生産性・速度・費用・品質の改善効果は未実証。 | `README.md` |
 
 ## 読む順番
 

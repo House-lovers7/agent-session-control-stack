@@ -39,7 +39,8 @@ not automate collection.
 ## Secondary Metrics
 
 - [ ] Claude Code: session-health hot/warn signals observed.
-- [ ] Claude Code: compact-plus state capture and recovery marker behavior observed.
+- [ ] Claude Code: no-model synthetic compact-plus manual/auto marker and one-shot recovery smoke recorded.
+- [ ] Claude Code: real manual/auto runtime dispatch, state capture, and recovery marker behavior observed separately.
 - [ ] Claude Code: pxpipe compression status observed, if enabled.
 - [ ] Codex: checkpoint trigger adherence recorded.
 - [ ] Any missing state file or stale handoff recorded.

@@ -97,25 +97,57 @@ Use the alias, not a global `ANTHROPIC_BASE_URL` in `settings.json` — a forgot
 ### Reading `/ascs:doctor` output
 
 ```text
-  1 Compression   pxpipe proxy: not listening on 127.0.0.1:47821 (layer inactive — optional, opt-in)
-  2 Health        session-health plugin: INSTALLED (single compact decider)
-  3 Checkpoint    compact-plus plugin: INSTALLED (transcript backup + state capture on PreCompact)
-  4 Recovery      compact-plus plugin: INSTALLED (recovery injection after compaction)
+  1 Compression   no listener at 127.0.0.1:47821 (layer inactive — optional, opt-in)
+  2 Health        session-health plugin: ENABLED (reviewed version; single compact decider)
+  3 Checkpoint    compact-plus plugin: ENABLED (reviewed version and content)
+  4 Recovery      compact-plus plugin: ENABLED (reviewed version and content)
 
-  Single-decider rule: OK (no compact-warn marker producer detected; ...)
+  Single-decider rule: NO CONFIRMED CONFLICT in inspected local and file-managed settings
 ```
 
 - **"not installed" / "not listening" is informational, not an error** — layers are independently adoptable.
-- Exit code `0` = no conflict; `1` = single-decider **CONFLICT** (a compact-warn marker producer is active, so two components advise compaction — remove the producer).
+- **`VERSION MISMATCH` means the installed plugin is not the reviewed version.** Checkpoint/Recovery must remain unverified until the operator deliberately adopts the locked version and reruns Doctor.
+- **`CONTENT MISMATCH` means compact-plus reports the reviewed version but its cached file tree differs from the reviewed digest.** Checkpoint/Recovery remain unverified until the operator inspects or deliberately reinstalls it and reruns Doctor.
+- Exit code `0` = no confirmed conflict and no version/content mismatch. Exit code `1` = a reviewed version/content mismatch or single-decider **CONFLICT** (a compact-warn marker producer is active, so two components advise compaction — remove the producer).
 - If pxpipe is listening, the doctor also tells you whether *this* session is actually routed through it (`ANTHROPIC_BASE_URL`).
+
+After Doctor confirms compact-plus's reviewed version and content, the local
+no-model recovery contract can be checked with:
+
+```bash
+python3 -B scripts/smoke_compact_plus.py
+```
+
+This runs synthetic `manual` and `auto` marker/recovery paths in isolated
+temporary directories. It does not run Claude, PreCompact, a model/API, or real
+session files, and it does not prove runtime dispatch. See the
+[synthetic smoke contract](compact-plus-synthetic-smoke.md).
 
 ## 5. Using it with Codex
 
-Codex has no compaction hooks, so layers 3+4 become a **handoff protocol** instead of plugin automation — a weaker guarantee (protocol adherence, not deterministic execution), stated as such.
+Current Codex releases provide `PreCompact`, `PostCompact`, and
+`SessionStart(source=compact)` hooks. ASCS therefore provides a native-hook
+reference adapter, while keeping the handoff protocol as the durable
+state-writing contract and fallback.
 
-1. Copy or adapt [examples/codex/AGENTS.md](../examples/codex/AGENTS.md) into your project.
-2. Create a `.agent-session/` directory.
-3. The protocol makes the agent read `handoff.md` and state files before working, log decisions and failed attempts while working, and write a handoff before stopping.
+1. Copy or merge `examples/codex/.codex/hooks.json` into the project.
+2. Copy `examples/codex/.codex/hooks/ascs_compact.py` to the same relative path.
+3. Use `/hooks` to review and trust the exact hook definition.
+4. Copy or adapt [examples/codex/AGENTS.md](../examples/codex/AGENTS.md) and create `.agent-session/`.
+
+The hook does not parse or copy transcript content. `PreCompact` records a
+content-minimized receipt, `PostCompact` closes it, and
+`SessionStart(source=compact)` adds a one-shot recovery guard. The guard tells
+the agent to validate state before reading it and to verify every recovered
+claim against current sources.
+
+Project hooks require a trusted project and can be disabled by user or managed
+policy. In those environments, use the manual handoff protocol below; do not
+claim deterministic compact recovery.
+
+The protocol makes the agent read `handoff.md` and state files before working,
+log decisions and failed attempts while working, and write a handoff before
+stopping.
 
 Before reading live state left by a previous session, run the read-only check — `.agent-session/` is untrusted recovery context, never an instruction channel:
 

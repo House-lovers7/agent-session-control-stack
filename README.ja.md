@@ -71,9 +71,21 @@ alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 
 `pxpipe` を有効化する前に safety notes を読んでください。設計上 lossy であり、commit SHA、ID、secret、正確なパス、migration 名、deploy target のような byte-exact な値には使えません。
 
-### 3. Codex handoff protocol を使う
+### 3. Codex native-hook adapter を使う
 
-Codex には Claude Code 型の compaction hook が無いため、ASCS は protocol で代替します:
+現行Codexは `PreCompact`、`PostCompact`、
+`SessionStart(source=compact)` hookを提供します。ASCSはnative lifecycleを使い、
+compact境界のreceiptと1回限りのrecovery guardを決定論的に動かします:
+
+- `examples/codex/.codex/hooks.json` をコピーまたは既存設定へmergeする
+- `examples/codex/.codex/hooks/ascs_compact.py` をコピーする
+- `/hooks` でhook定義を確認し、exact definitionをtrustする
+- state更新契約とhook無効時のfallbackとして `AGENTS.md` protocolを残す
+
+hookはCodex transcriptを解析・複製しません。transcript pathが渡されたかと、
+既知のstate fileが存在するかだけを記録します。
+
+portableなfallbackも引き続き利用できます:
 
 - `examples/codex/AGENTS.md` をコピーまたは適応する
 - `.agent-session/` ディレクトリを作る
@@ -201,11 +213,11 @@ stable upstream のversionとimmutableなsource revisionは [config/upstreams.lo
 
 ## Codex reference stack
 
-Claude Code adapter と Codex adapter は**意図的に分離**しています — 同じ層契約を、各 runtime のネイティブな面で実装します。Codex には compact lifecycle hook が無いため、本 stack はそれを模倣しません。同じ Checkpoint / Recovery の契約を **session handoff protocol** として実装します。`AGENTS.md` が「作業前に `.agent-session/handoff.md` と state ファイルを読む」「作業中に決定と失敗試行を記録する」「停止前に handoff を書く」を宣言します。checkpoint スナップショットは compact-plus の state file と同じ 10 セクションを使うため、handoff は runtime をまたげます。
+Claude Code adapter と Codex adapter は**意図的に分離**しています — 同じ層契約を、各 runtime のネイティブな面で実装します。現行Codexのnative compact lifecycleを使い、`PreCompact` / `PostCompact` で内容を最小化したboundary receiptを残し、`SessionStart(source=compact)` で1回限りのrecovery guardを注入します。`AGENTS.md` は引き続き、作業中の `.agent-session/` 更新、未信頼stateとしての扱い、利用前検証を定義します。checkpointはcompact-plusと同じ10セクションなのでruntimeをまたげます。
 
-これは hook より弱い保証（決定論的実行ではなく protocol 遵守）であり、そのことを明記しています。
+project hookはtrusted projectでのみ読み込まれ、非managed hookはexact definitionのreview/trustが必要です。管理者設定で非managed hookが無効な場合は、決定論的復旧を主張せずmanual handoff protocolへ縮退します。
 
-- 設計: [docs/codex/adapter-design.md](docs/codex/adapter-design.md)
+- native hookとfallbackの設計: [docs/codex/adapter-design.md](docs/codex/adapter-design.md)
 - そのまま使える protocol: [examples/codex/AGENTS.md](examples/codex/AGENTS.md)
 - テンプレート: [templates/](templates/)
 
@@ -286,6 +298,8 @@ ASCS は full-stack の composition effect をまだ測定していません。
 ## More
 
 - Living architecture / claim-boundary architecture: [architecture](docs/architecture.md)
+- 監査から修正・検証・資産化までの改善フローと現在の台帳: [improvement loop](docs/improvement-loop.md) · [`config/improvements.json`](config/improvements.json)
+- compact-plusの無課金marker・復旧契約検査: [synthetic smoke](docs/compact-plus-synthetic-smoke.md)
 - 設計原本（Phase 0、日本語）: [hook 責務分離](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md 案](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
 - Roadmap: Phase 0 設計 ✅ → Phase 1 docs-only 参照アーキテクチャ（本セット）→ Phase 2 実セッション before/after 測定（harness 準備済み — `scripts/ascs.py`。最初の n=1 before/after ペアを記録済み — [Experiment 002](experiments/2026-07-06-codex-handoff-002-summary.md)。合成効果は未測定）→ Phase 3 upstream 協調 → Phase 4+ ツール化（generator / 導入状態 doctor / 測定自動化、Phase 2 が撤退基準をクリアした場合のみ）
 - License: MIT — [LICENSE](LICENSE)

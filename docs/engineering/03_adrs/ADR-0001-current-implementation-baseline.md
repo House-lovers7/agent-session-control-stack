@@ -16,17 +16,17 @@ Observed / Accepted as current implementation baseline — 2026-07-15
 
 | Decision area | Current decision | Evidence |
 |---|---|---|
-| Code boundary | scripts | `package/source layout` |
-| Data boundary | 1 entitiesをschema/migrationで管理 | `scripts/exp004.py, scripts/exp005.py` |
-| Quality gate | 8 test files / 1 quality configs | `.github/workflows/test.yml` |
+| Runtime boundary | stdlib中心のCLI・hook・plugin diagnostics | `scripts/`, `plugins/ascs/`, `examples/codex/.codex/` |
+| Data boundary | DBなし。local JSON/JSONL/Markdown artifacts | `docs/engineering/05_data_model.md` |
+| Quality gate | 9 test files + repository validator | `.github/workflows/test.yml` |
 
 - 上表を次の設計変更までのbaselineとする。
 - 既存ADRがある場合はそちらを優先し、このADRは索引・現況記録として扱う。
-- framework、schema、配備単位、外部providerを変更する際は新しいADRで代替案と移行・rollbackを記録する。
+- hook lifecycle、evidence schema、state trust、外部providerを変更する際は新しいADRで代替案とrollbackを記録する。
 
 ## Consequences
 
-- 変更影響: `scripts` の境界を跨ぐ変更はAPI/data/UI文書を同時更新する。
+- 変更影響: `scripts`、plugin、hook、state/evidence契約を跨ぐ変更はadapter・risk・testを同時更新する。
 - 運用影響: `config (`.github/workflows/test.yml`)` の変更は検証とrollback確認が必要。
 - 未確認: production設定、動的route、外部console、secret値、当初の比較検討理由。
 
@@ -34,3 +34,5 @@ Observed / Accepted as current implementation baseline — 2026-07-15
 
 - `scripts/exp004.py`
 - `scripts/exp005.py`
+- `examples/codex/.codex/hooks/ascs_compact.py`
+- `scripts/validate_repo.py`

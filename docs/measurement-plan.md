@@ -20,7 +20,7 @@
 - session-health の hot 到達率・hot 滞在時間、hook 発火回数
 - compact-plus の state file 生成成否・recovery 注入の発火（marker 消費）確認
 - pxpipe の圧縮リクエスト率・画像化バイト数（dashboard）
-- Codex: checkpoint トリガー該当時の実施率（protocol 遵守率）
+- Codex: PreCompact / PostCompact / compact SessionStartの発火率、one-shot receipt消費率、checkpoint本文のprotocol遵守率
 
 ## 2. 実験設計
 
@@ -30,7 +30,7 @@ baseline: stack なし 1〜2 セッション（同種のタスク規模）
 treated:  stack あり 1〜2 セッション
   Claude Code: session-health + compact-plus（backend "" / reminder 構成的off）
                + pxpipe（byte-exact 作業を含む場合は subagent 逃がしを併用）
-  Codex:      AGENTS.md protocol + .agent-session/
+  Codex:      native compact hooks + AGENTS.md protocol + .agent-session/
 記録:    experiment report（templates/、1 セッション 1 ファイル）に
          開始時に判定基準を書いてから作業する（事後基準変更を防ぐ）
 ```

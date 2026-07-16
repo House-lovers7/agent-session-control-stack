@@ -6,24 +6,24 @@
 
 ## 観測された採用スタック
 
-明示的なアプリケーションmanifestなし
+依存package manifestを持たず、Python標準ライブラリ中心のCLI・hook・検証scriptとして構成する。
 
 ## Package / workspace
 
 | Package | Manifest |
 |---|---|
-| package manifest未検出 | - |
+| Python CLI / hooks | `scripts/`, `plugins/ascs/scripts/`, `examples/codex/.codex/hooks/` |
 
 ## トレードオフ
 
 | 対象 | 現在 | 比較候補 | 現在案の利点 | 注意点 |
 |---|---|---|---|---|
-| 資産形態 | 現在のファイル構成 | runtime新設 | 移行を伴わず正典を保持 | 実行manifestがないため技術比較は未成立 |
+| 依存管理 | stdlib中心・package manifestなし | package化 | install不要で監査しやすい | copy/merge手順とPython互換性をCIで維持する必要 |
 
 > [中] 比較候補は現行実装を理解するための対照であり、移行提案ではない。当時の採用理由は既存ADRがあればそちらを正典とする。
 
 ## 判断を更新する条件
 
-- manifest: 未検出
+- dependency manifest: 意図的に不使用
 - quality config: `.github/workflows/test.yml`
 - framework更新時はlockfile、build、typecheck、主要test、runtime smokeを同じ変更で確認する。

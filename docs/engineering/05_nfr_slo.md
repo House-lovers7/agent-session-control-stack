@@ -8,17 +8,19 @@
 
 | Gate | Command | 根拠 |
 |---|---|---|
-| validation | 未検出 | README/CIで正典を確定 |
+| unit | `python3 -m unittest discover tests -v` | `.github/workflows/test.yml` |
+| repository validation | `python3 scripts/validate_repo.py --require-upstream-lock` | `.github/workflows/test.yml` |
 
-- test files: 8（`tests/test_exp004.py`, `tests/test_exp005.py`, `tests/test_ascs.py`, `tests/test_check_state.py`, `tests/test_validate_repo.py`, `tests/test_compact_plus_smoke.py`, `tests/test_ascs_doctor.py`, `tests/test_exp003.py`）
+- test files: 9（Codex native compact hookを含む）
 - quality/CI config: `.github/workflows/test.yml`
-- security/resilience signal: auth/session (`plugins/ascs/scripts/ascs_doctor.py`), resilience (`plugins/ascs/scripts/ascs_doctor.py`), auth/session (`tests/test_exp004.py`), tenant/RLS (`tests/test_exp004.py`), auth/session (`tests/test_exp005.py`), tenant/RLS (`tests/test_exp005.py`), auth/session (`tests/test_ascs.py`), auth/session (`tests/test_check_state.py`), auth/session (`tests/test_validate_repo.py`), auth/session (`tests/test_ascs_doctor.py`), resilience (`tests/test_ascs_doctor.py`), auth/session (`tests/test_exp003.py`), tenant/RLS (`tests/test_exp003.py`), auth/session (`docs/architecture.html`), auth/session (`scripts/exp003.py`), tenant/RLS (`scripts/exp003.py`), auth/session (`scripts/exp004.py`), tenant/RLS (`scripts/exp004.py`), auth/session (`scripts/exp005.py`), tenant/RLS (`scripts/exp005.py`)
+- security/resilience signals: Doctorのsecret非表示・version/content fail-closed、state metadata/secret検査、Codex hookのsession一致・one-shot・fail-open、evidence schema拒否test
 
 ## 計測すべきSLI
 
 | Boundary | SLI | 最初の計測根拠 |
 |---|---|---|
-| Data | migration成功・constraint違反・鮮度/欠損 | `scripts/exp004.py` |
+| Codex hook | Pre/PostCompact発火率、one-shot消費率、fail-open率 | `tests/test_codex_compact_hook.py` |
+| Evidence | malformed/void evidence拒否率、claim境界 | `tests/test_ascs.py` |
 
 ## SLOの状態
 

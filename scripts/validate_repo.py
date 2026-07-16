@@ -17,7 +17,10 @@ COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
 ISO_DATE = re.compile(r"^20[0-9]{2}-[01][0-9]-[0-3][0-9]$")
 NPM_INTEGRITY = re.compile(r"^sha512-[A-Za-z0-9+/]+={0,2}$")
+TREE_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 EXPECTED_UPSTREAMS = {"session-health", "compact-plus", "pxpipe-proxy"}
+REVIEWED_PLUGIN_UPSTREAMS = {"session-health", "compact-plus"}
+CONTENT_PINNED_UPSTREAMS = {"compact-plus"}
 PXPIPE_INVOCATION = re.compile(
     r"\bnpx\b[^\n`'\";|&]{0,160}?\bpxpipe-proxy(?:@(?P<version>[0-9A-Za-z.+-]+))?"
 )
@@ -69,6 +72,69 @@ STATE_PROTOCOL_PHRASES = (
     "raw customer or personal data",
     "verbatim untrusted instructions",
 )
+IMPLEMENTATION_STATUS_MARKERS = (
+    "Current implementation status (2026-07-13)",
+    "Phase 2 measurement harness: implemented",
+    "Install-state Doctor: implemented early as a safety diagnostic",
+    "Synthetic compact-plus recovery smoke: implemented",
+    "Automated benefit measurement: not implemented",
+    "Full-stack composition benefit: unvalidated",
+)
+IMPLEMENTED_STATUS_FILES = {
+    "Phase 2 measurement harness: implemented": "scripts/ascs.py",
+    "Install-state Doctor: implemented early as a safety diagnostic": (
+        "plugins/ascs/scripts/ascs_doctor.py"
+    ),
+    "Synthetic compact-plus recovery smoke: implemented": (
+        "scripts/smoke_compact_plus.py"
+    ),
+}
+IMPROVEMENT_ID = re.compile(r"^IMP-[0-9]{3}$")
+IMPROVEMENT_SEVERITIES = {"P0", "P1", "P2", "P3"}
+IMPROVEMENT_STATUSES = {
+    "open",
+    "in_progress",
+    "in_verification",
+    "verified",
+    "deferred",
+    "rejected",
+}
+IMPROVEMENT_DOC_MARKERS = (
+    "Reproduce before modify",
+    "Human Approval Gate",
+    "Close only with evidence",
+    "config/improvements.json",
+)
+COMPACT_SMOKE_ASSETS = (
+    "scripts/smoke_compact_plus.py",
+    "tests/test_compact_plus_smoke.py",
+    "docs/compact-plus-synthetic-smoke.md",
+)
+COMPACT_SMOKE_SCRIPT_MARKERS = (
+    "SUMMARY_SENTINEL",
+    "doctor.read_plugin_inventory()",
+    '"COMPACT_PLUS_PRIMARY_BACKEND": ""',
+    '"COMPACT_PLUS_FALLBACK_BACKEND": ""',
+    "run_plugin_smoke",
+)
+COMPACT_SMOKE_DOC_MARKERS = (
+    "manual",
+    "auto",
+    "no Claude/model/API/PreCompact execution",
+    "runtime dispatch remains unverified",
+    "Human Approval Gate",
+)
+CODEX_COMPACT_HOOK_ASSETS = (
+    "examples/codex/.codex/hooks.json",
+    "examples/codex/.codex/hooks/ascs_compact.py",
+    "docs/codex/adapter-design.md",
+    "tests/test_codex_compact_hook.py",
+)
+CODEX_COMPACT_EVENTS = {
+    "PreCompact": "^(manual|auto)$",
+    "PostCompact": "^(manual|auto)$",
+    "SessionStart": "^compact$",
+}
 
 
 def is_within(path, root):
@@ -222,6 +288,238 @@ def validate_doctor_command(root):
     return errors
 
 
+def validate_implementation_status(root):
+    """Keep the historical phase plan aligned with the current repository."""
+    path = root / "docs" / "implementation-plan.md"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return [f"docs/implementation-plan.md: cannot validate current status: {exc}"]
+
+    errors = []
+    for marker in IMPLEMENTATION_STATUS_MARKERS:
+        if marker not in text:
+            errors.append(
+                f"docs/implementation-plan.md: missing current status marker {marker!r}"
+            )
+    for marker, relative in IMPLEMENTED_STATUS_FILES.items():
+        if marker in text and not (root / relative).is_file():
+            errors.append(
+                f"docs/implementation-plan.md: {marker!r} requires existing {relative}"
+            )
+    return errors
+
+
+def validate_improvement_loop(root):
+    """Validate the audit-to-fix register and its reusable workflow assets."""
+    register_path = root / "config" / "improvements.json"
+    workflow_path = root / "docs" / "improvement-loop.md"
+    template_path = root / "templates" / "improvement-entry.md"
+    errors = []
+    try:
+        register = json.loads(register_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return [f"config/improvements.json: cannot validate register: {exc}"]
+
+    for path, label in (
+        (workflow_path, "docs/improvement-loop.md"),
+        (template_path, "templates/improvement-entry.md"),
+    ):
+        if not path.is_file():
+            errors.append(f"{label}: required improvement-loop asset is missing")
+    if workflow_path.is_file():
+        workflow_text = workflow_path.read_text(encoding="utf-8")
+        for marker in IMPROVEMENT_DOC_MARKERS:
+            if marker not in workflow_text:
+                errors.append(f"docs/improvement-loop.md: missing marker {marker!r}")
+
+    if not isinstance(register, dict) or register.get("schema_version") != 1:
+        return errors + ["config/improvements.json: schema_version must be 1"]
+    if register.get("workflow") != "docs/improvement-loop.md":
+        errors.append("config/improvements.json: workflow must name docs/improvement-loop.md")
+    if register.get("template") != "templates/improvement-entry.md":
+        errors.append(
+            "config/improvements.json: template must name templates/improvement-entry.md"
+        )
+    items = register.get("items")
+    if not isinstance(items, list) or not items:
+        return errors + ["config/improvements.json: items must be a non-empty array"]
+
+    required = {
+        "id",
+        "title",
+        "severity",
+        "status",
+        "verified_at",
+        "verification_result",
+        "evidence",
+        "assets",
+        "verification",
+        "next_gate",
+    }
+    seen = set()
+    for index, item in enumerate(items):
+        context = f"config/improvements.json: items[{index}]"
+        if not isinstance(item, dict) or set(item) != required:
+            errors.append(f"{context} keys must be exactly {', '.join(sorted(required))}")
+            continue
+        item_id = item["id"]
+        if not isinstance(item_id, str) or not IMPROVEMENT_ID.fullmatch(item_id):
+            errors.append(f"{context}.id must match IMP-###")
+        elif item_id in seen:
+            errors.append(f"{context}.id is duplicated: {item_id}")
+        else:
+            seen.add(item_id)
+        if item["severity"] not in IMPROVEMENT_SEVERITIES:
+            errors.append(f"{context}.severity is invalid")
+        if item["status"] not in IMPROVEMENT_STATUSES:
+            errors.append(f"{context}.status is invalid")
+        for key in ("title", "evidence", "verification", "next_gate"):
+            if not isinstance(item[key], str) or not item[key].strip():
+                errors.append(f"{context}.{key} must be a non-empty string")
+        if item["status"] == "verified":
+            if not isinstance(item["verified_at"], str) or not ISO_DATE.fullmatch(
+                item["verified_at"]
+            ):
+                errors.append(f"{context}.verified_at must be an ISO date")
+            if (
+                not isinstance(item["verification_result"], str)
+                or not item["verification_result"].strip()
+            ):
+                errors.append(
+                    f"{context}.verification_result is required for verified items"
+                )
+        elif item["verified_at"] is not None or item["verification_result"] not in (
+            None,
+            "",
+        ):
+            errors.append(
+                f"{context} may set verified_at/result only when status is verified"
+            )
+        assets = item["assets"]
+        if not isinstance(assets, list) or not assets:
+            errors.append(f"{context}.assets must be a non-empty array")
+            continue
+        for asset in assets:
+            if not isinstance(asset, str) or not asset:
+                errors.append(f"{context}.assets contains an invalid path")
+                continue
+            candidate = (root / asset).resolve()
+            if not is_within(candidate, root) or not candidate.is_file():
+                errors.append(f"{context}.assets path does not exist safely: {asset}")
+    return errors
+
+
+def validate_compact_plus_smoke_assets(root):
+    """Keep the no-model synthetic smoke executable, tested, and bounded."""
+    errors = []
+    for relative in COMPACT_SMOKE_ASSETS:
+        if not (root / relative).is_file():
+            errors.append(f"{relative}: required compact-plus smoke asset is missing")
+
+    script_path = root / "scripts" / "smoke_compact_plus.py"
+    if script_path.is_file():
+        try:
+            script_text = script_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(f"scripts/smoke_compact_plus.py: cannot read: {exc}")
+        else:
+            for marker in COMPACT_SMOKE_SCRIPT_MARKERS:
+                if marker not in script_text:
+                    errors.append(
+                        "scripts/smoke_compact_plus.py: missing safety marker "
+                        f"{marker!r}"
+                    )
+
+    docs_path = root / "docs" / "compact-plus-synthetic-smoke.md"
+    if docs_path.is_file():
+        try:
+            docs_text = docs_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(
+                f"docs/compact-plus-synthetic-smoke.md: cannot read: {exc}"
+            )
+        else:
+            for marker in COMPACT_SMOKE_DOC_MARKERS:
+                if marker not in docs_text:
+                    errors.append(
+                        "docs/compact-plus-synthetic-smoke.md: missing boundary "
+                        f"{marker!r}"
+                    )
+
+    workflow_path = root / ".github" / "workflows" / "test.yml"
+    try:
+        workflow_text = workflow_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        errors.append(f".github/workflows/test.yml: cannot read: {exc}")
+    else:
+        if "scripts/smoke_compact_plus.py" not in workflow_text:
+            errors.append(
+                ".github/workflows/test.yml: synthetic smoke CLI must be py-compiled"
+            )
+    return errors
+
+
+def validate_codex_compact_hook_assets(root):
+    errors = []
+    for relative in CODEX_COMPACT_HOOK_ASSETS:
+        if not (root / relative).is_file():
+            errors.append(f"{relative}: required Codex compact-hook asset is missing")
+    hooks_path = root / "examples/codex/.codex/hooks.json"
+    if hooks_path.is_file():
+        try:
+            payload = json.loads(hooks_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            errors.append(f"examples/codex/.codex/hooks.json: invalid JSON: {exc}")
+            payload = {}
+        hooks = payload.get("hooks") if isinstance(payload, dict) else None
+        if not isinstance(hooks, dict):
+            errors.append("examples/codex/.codex/hooks.json: hooks object is required")
+        else:
+            for event, matcher in CODEX_COMPACT_EVENTS.items():
+                groups = hooks.get(event)
+                if not isinstance(groups, list) or len(groups) != 1:
+                    errors.append(f"examples/codex/.codex/hooks.json: {event} needs one group")
+                    continue
+                group = groups[0]
+                if not isinstance(group, dict) or group.get("matcher") != matcher:
+                    errors.append(
+                        f"examples/codex/.codex/hooks.json: {event} matcher must be {matcher!r}"
+                    )
+                handlers = group.get("hooks") if isinstance(group, dict) else None
+                command = handlers[0].get("command") if isinstance(handlers, list) and handlers else None
+                if not isinstance(command, str) or ".codex/hooks/ascs_compact.py" not in command:
+                    errors.append(
+                        f"examples/codex/.codex/hooks.json: {event} must call the ASCS hook"
+                    )
+    script_path = root / "examples/codex/.codex/hooks/ascs_compact.py"
+    if script_path.is_file():
+        script = script_path.read_text(encoding="utf-8")
+        for marker in (
+            'event not in {"PreCompact", "PostCompact", "SessionStart"}',
+            'payload.get("source") != "compact"',
+            '"transcript_available"',
+            "untrusted recovery context",
+            'result = CONTINUE.copy()',
+        ):
+            if marker not in script:
+                errors.append(
+                    f"examples/codex/.codex/hooks/ascs_compact.py: missing safety marker {marker!r}"
+                )
+    docs_path = root / "docs/codex/adapter-design.md"
+    if docs_path.is_file():
+        docs = docs_path.read_text(encoding="utf-8")
+        for marker in (
+            "https://learn.chatgpt.com/docs/hooks",
+            "retrieved 2026-07-16",
+            "[Unverified]",
+            "transcript format as unstable",
+        ):
+            if marker not in docs:
+                errors.append(f"docs/codex/adapter-design.md: missing spec record {marker!r}")
+    return errors
+
+
 def validate_upstream_lock(root, require=False):
     """Validate lock shape and its marketplace/docs consumers without network access."""
     lock_path = root / "config" / "upstreams.lock.json"
@@ -287,6 +585,30 @@ def validate_upstream_lock(root, require=False):
                 errors.append(f"config/upstreams.lock.json: invalid GitHub lock for {name}")
             else:
                 github_sources[repo] = revision
+            content_integrity = entry.get("content_integrity")
+            if name in CONTENT_PINNED_UPSTREAMS:
+                if (
+                    not isinstance(content_integrity, dict)
+                    or set(content_integrity)
+                    != {"algorithm", "digest", "file_count", "verified_at"}
+                    or content_integrity.get("algorithm") != "sha256-tree-v1"
+                    or not TREE_SHA256.fullmatch(
+                        str(content_integrity.get("digest", ""))
+                    )
+                    or isinstance(content_integrity.get("file_count"), bool)
+                    or not isinstance(content_integrity.get("file_count"), int)
+                    or not 0 < content_integrity["file_count"] <= 2048
+                    or not ISO_DATE.fullmatch(
+                        str(content_integrity.get("verified_at", ""))
+                    )
+                ):
+                    errors.append(
+                        f"config/upstreams.lock.json: invalid content integrity for {name}"
+                    )
+            elif content_integrity is not None:
+                errors.append(
+                    f"config/upstreams.lock.json: unexpected content integrity for {name}"
+                )
         elif entry.get("type") == "npm":
             version = entry.get("version")
             integrity = entry.get("integrity")
@@ -357,11 +679,81 @@ def validate_upstream_lock(root, require=False):
                 for key in ("version", "revision", "integrity", "source_revision")
                 if entry.get(key)
             )
+            content_integrity = entry.get("content_integrity")
+            if isinstance(content_integrity, dict):
+                required_lock_tokens.extend(
+                    str(content_integrity[key])
+                    for key in ("algorithm", "digest", "file_count")
+                    if content_integrity.get(key) is not None
+                )
         for token in required_lock_tokens:
             if token not in policy_text:
                 errors.append(
                     f"{update_policy}: does not document locked value {token}"
                 )
+    return errors
+
+
+def validate_reviewed_plugin_snapshot(root):
+    """Keep the Doctor's packaged version contract synced to the root lock."""
+    lock_path = root / "config" / "upstreams.lock.json"
+    snapshot_path = root / "plugins" / "ascs" / "reviewed-upstreams.json"
+    try:
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return [f"plugins/ascs/reviewed-upstreams.json: cannot validate snapshot: {exc}"]
+
+    errors = []
+    if not isinstance(lock, dict) or not isinstance(lock.get("upstreams"), dict):
+        return ["config/upstreams.lock.json: cannot derive reviewed plugin snapshot"]
+    if not isinstance(snapshot, dict) or snapshot.get("schema_version") != 2:
+        return ["plugins/ascs/reviewed-upstreams.json: schema_version must be 2"]
+    if snapshot.get("source") != "config/upstreams.lock.json":
+        errors.append(
+            "plugins/ascs/reviewed-upstreams.json: source must name config/upstreams.lock.json"
+        )
+    if snapshot.get("verified_at") != lock.get("verified_at"):
+        errors.append(
+            "plugins/ascs/reviewed-upstreams.json: verified_at must match the root lock"
+        )
+    plugins = snapshot.get("plugins")
+    if not isinstance(plugins, dict) or set(plugins) != REVIEWED_PLUGIN_UPSTREAMS:
+        return errors + [
+            "plugins/ascs/reviewed-upstreams.json: plugin names must be exactly "
+            + ", ".join(sorted(REVIEWED_PLUGIN_UPSTREAMS))
+        ]
+
+    upstreams = lock["upstreams"]
+    for name in sorted(REVIEWED_PLUGIN_UPSTREAMS):
+        snapshot_entry = plugins.get(name)
+        lock_entry = upstreams.get(name)
+        if not isinstance(snapshot_entry, dict) or not isinstance(lock_entry, dict):
+            errors.append(
+                f"plugins/ascs/reviewed-upstreams.json: {name} must match a lock object"
+            )
+            continue
+        expected_fields = {"version", "revision"}
+        if "content_integrity" in lock_entry:
+            expected_fields.add("content_integrity")
+        if set(snapshot_entry) != expected_fields:
+            errors.append(
+                "plugins/ascs/reviewed-upstreams.json: "
+                f"{name} fields must be exactly {', '.join(sorted(expected_fields))}"
+            )
+        for field in ("version", "revision"):
+            if snapshot_entry.get(field) != lock_entry.get(field):
+                errors.append(
+                    "plugins/ascs/reviewed-upstreams.json: "
+                    f"{name}.{field} must match config/upstreams.lock.json"
+                )
+        if snapshot_entry.get("content_integrity") != lock_entry.get(
+            "content_integrity"
+        ):
+            errors.append(
+                "plugins/ascs/reviewed-upstreams.json: "
+                f"{name}.content_integrity must match config/upstreams.lock.json"
+            )
     return errors
 
 
@@ -488,7 +880,12 @@ def validate(root=REPO_ROOT, require_upstream_lock=False):
     errors.extend(validate_manifests(root))
     errors.extend(validate_internal_links(root))
     errors.extend(validate_doctor_command(root))
+    errors.extend(validate_implementation_status(root))
+    errors.extend(validate_improvement_loop(root))
+    errors.extend(validate_compact_plus_smoke_assets(root))
+    errors.extend(validate_codex_compact_hook_assets(root))
     errors.extend(validate_upstream_lock(root, require=require_upstream_lock))
+    errors.extend(validate_reviewed_plugin_snapshot(root))
     errors.extend(validate_state_scaffolds(root))
     return errors
 
@@ -507,7 +904,12 @@ def main(argv=None):
             print(f"ERROR: {error}", file=sys.stderr)
         print(f"Repository validation failed with {len(errors)} error(s).", file=sys.stderr)
         return 1
-    print("Repository validation passed (JSON, manifests, links, doctor safety, upstream lock, state trust).")
+    print(
+        "Repository validation passed (JSON, manifests, links, doctor safety, "
+        "implementation status, improvement loop, compact-plus synthetic smoke, "
+        "Codex native compact hook, "
+        "upstream lock, reviewed plugin snapshot, state trust)."
+    )
     return 0
 
 

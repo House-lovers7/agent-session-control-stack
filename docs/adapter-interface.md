@@ -6,7 +6,7 @@
 
 - **層の契約は runtime に依存しない**。Claude Code の hook 名や Codex のファイル規約は binding の詳細であり、契約ではない
 - **各層は独立に導入・撤去できる**。1 層だけ入れても意味があり、4 層すべてを要求しない
-- **Claude Code 固有実装を Codex へ移植しない**。同じ契約を、その runtime のネイティブな面（hook vs AGENTS.md）で満たす
+- **runtime固有実装をそのまま移植しない**。同じ契約を、各runtimeのnative hookとportableなstate protocolで満たす
 
 ## 2. 層ごとの契約
 
@@ -68,19 +68,19 @@
 |---|---|---|
 | Compression | pxpipe（local proxy、`ANTHROPIC_BASE_URL` 差し替え） | **移植しない（Phase 0 判断）**。CLI 接続・API 形式・tool 定義の扱いが未検証。思想（bulky context を主文脈に入れない）のみ AGENTS.md の運用規律として反映 |
 | Health | session-health（UserPromptSubmit hook + transcript scan） | 代理シグナル + 自己申告。session-health が測る指標面に相当するものは未検証（risk-register 参照）のため、経過時間 / tool call 数 / diff 量 / テスト失敗回数 / prompt 数を根拠に、AGENTS.md が checkpoint 更新をトリガーする。wrapper（`codex-session run` による自動監視）は Phase 2+ |
-| Checkpoint | compact-plus（PreCompact hook、自動） | `.agent-session/state/` への手続き的書き込み（AGENTS.md protocol、エージェント自身が実行） |
-| Recovery | compact-plus（PostCompact marker → UserPromptSubmit 注入、自動） | handoff.md を新セッションの読み込み起点にする（AGENTS.md protocol） |
+| Checkpoint | compact-plus（PreCompact hook、自動） | `PreCompact(manual\|auto)`で内容最小のboundary receiptを自動記録し、state本文はAGENTS.md protocolで更新 |
+| Recovery | compact-plus（PostCompact marker → UserPromptSubmit 注入、自動） | `PostCompact`でreceiptを閉じ、`SessionStart(source=compact)`で同一sessionに1回だけrecovery guardを追加。hook無効時はhandoff.mdへfallback |
 
 ## 4. binding 間の本質的差分
 
 | 観点 | Claude Code | Codex |
 |---|---|---|
-| lifecycle event | あり（PreCompact / PostCompact / UserPromptSubmit） | なし（前提にしない） |
-| 実行主体 | hook（決定論的、エージェントの意思に依存しない） | エージェント自身（AGENTS.md 遵守に依存 = 確率的） |
+| lifecycle event | あり（PreCompact / PostCompact / UserPromptSubmit） | あり（PreCompact / PostCompact / SessionStart source=compact） |
+| 実行主体 | hook（決定論的、エージェントの意思に依存しない） | boundaryはhook、state本文更新はAGENTS.md protocol |
 | 状態の置き場 | plugin 管理（`${TMPDIR}` / `~/.claude/backups/`） | repo 内 `.agent-session/`（git 管理外推奨、可視・可編集） |
-| 保証水準 | 強（イベント駆動で必ず走る） | 弱（protocol adherence は測定対象。risk-register 参照） |
+| 保証水準 | 強（reviewed pluginとruntime dispatchが前提） | 中（boundary検知はnative hook、state完全性はprotocol adherenceを測定） |
 
-この非対称性は隠さず明記する。Codex binding は「同じ保証」ではなく「同じ契約の弱い実装」である。
+Codex native hookはcompact境界を決定論的に捉えるが、plan・decision・failed attemptの内容生成までは保証しない。project trust、hook definitionのreview、managed policyでhookが無効になり得るため、manual handoff fallbackも残す。
 
 また、契約としての 4 層は独立だが、Claude Code binding では Checkpoint と Recovery を同一 plugin（compact-plus）が実装するため、binding レベルではこの 2 層は対で導入・撤去される。
 

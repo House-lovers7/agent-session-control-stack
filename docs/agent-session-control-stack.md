@@ -1,9 +1,9 @@
 # Agent Session Control Stack Phase 1
 
-This document defines the Phase 1 minimum viable reference architecture for
-Claude Code and Codex. Phase 1 is docs-only: it provides templates, examples,
-and operating rules. It does not install hooks, start proxies, generate wrapper
-commands, or automate measurement.
+This document started as the Phase 1 minimum viable reference architecture.
+The repository now also contains read-only diagnostics, measurement helpers,
+and a Codex native-hook reference adapter. It still does not install hooks,
+start proxies, call models, or automate benefit claims.
 
 ## Purpose
 
@@ -17,7 +17,8 @@ layers:
 
 The stack does not replace pxpipe, claude-code-session-health, or compact-plus.
 It documents how to compose them for Claude Code and how to express the same
-Checkpoint/Recovery contract as a Codex protocol.
+Checkpoint/Recovery contract through Codex native hooks plus a portable state
+protocol.
 
 ## Phase 1 File Map
 
@@ -29,6 +30,9 @@ agent-session-control-stack/
   examples/
     codex/
       AGENTS.md
+      .codex/
+        hooks.json
+        hooks/ascs_compact.py
       .agent-session/
         handoff.md
         state/
@@ -74,9 +78,13 @@ must not depend on pxpipe image compression.
 
 ## Codex Minimum Configuration
 
-Codex does not have Claude Code's compact lifecycle hooks in this design.
-Phase 1 therefore implements the shared Checkpoint/Recovery contract as a
-protocol:
+Current Codex provides native compact lifecycle hooks. The current reference
+binding combines those hooks with the original state protocol:
+
+- `examples/codex/.codex/hooks.json` binds `PreCompact`, `PostCompact`, and
+  `SessionStart(source=compact)`.
+- `ascs_compact.py` records a content-minimized, same-session receipt and adds
+  a one-shot recovery guard without parsing transcript content.
 
 - `examples/codex/AGENTS.md` declares the session control rules.
 - `examples/codex/.agent-session/handoff.md` is the single recovery entry
@@ -86,8 +94,10 @@ protocol:
 - `decision-log.md`, `failed-attempts.md`, `current-plan.md`, and
   `recovery-notes.md` preserve the details that summaries often drop.
 
-This is weaker than hooks because it depends on protocol adherence. Phase 2
-will measure whether the protocol is actually followed.
+Boundary detection is hook-driven, while state completeness still depends on
+protocol adherence. Phase 2 measures those guarantees separately. When hooks
+are unavailable or disabled, the original handoff protocol remains the
+portable fallback.
 
 ## Scope Boundary
 

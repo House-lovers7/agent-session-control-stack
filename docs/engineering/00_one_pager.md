@@ -6,7 +6,7 @@
 
 ## コンセプト
 
-長時間AIコーディングエージェント運用の参照アーキテクチャmeta-repo。pxpipe/session-health/compact-plusを置き換えずCompression/Health/Checkpoint/Recoveryの4層に責務分離し、Claude Codeはhooks/plugin、CodexはAGENTS.md+state+handoff protocolで実装する設計を文書化。コード非同梱・docs-only。
+長時間AIコーディングエージェント運用のreference stack。pxpipe/session-health/compact-plusを置き換えず4層に責務分離し、Claude Codeはupstream plugins、Codexはnative compact hooks + AGENTS.md + state protocolで実装する。read-only Doctor、state検査、measurement helper、hook referenceを含む。
 
 ## 誰の何を解くか
 
@@ -18,13 +18,13 @@
 
 | 項目 | 観測結果 |
 |---|---|
-| 技術スタック | manifestから未特定 |
+| 技術スタック | Python標準ライブラリ、shell、Claude/Codex hook設定、Markdown |
 | API | 0 endpoint signal |
-| データモデル | 1 unique entity signal |
+| データモデル | 永続DBなし。JSON/JSONL experiment evidenceとMarkdown state |
 | 画面 | 0 route/screen signal |
 | 実行基盤 | config (`.github/workflows/test.yml`) |
-| package / module | 1 component signal |
-| tests | 8 file signal |
+| package / module | CLI、Doctor、state checker、experiment helpers、Codex hook |
+| tests | 9 files |
 
 ## ソースマップ
 
@@ -36,13 +36,15 @@
 
 | 目的 | Command |
 |---|---|
-| 未検出 | READMEまたはCIから確認 |
+| test | `python3 -m unittest discover tests -v` |
+| validation | `python3 scripts/validate_repo.py --require-upstream-lock` |
+| repo doctor | `python3 scripts/ascs.py doctor` |
 
 ## 変更箇所の入口
 
 | 変更対象 | 最初に読むpath | 同時に確認するもの |
 |---|---|---|
-| データモデル | `scripts/exp004.py` | migration、制約、seed、API型 |
+| evidence schema | `scripts/ascs.py` | experiment profiles、claim boundary tests |
 | 実行・配備 | `.github/workflows/test.yml` | 環境変数、service依存、rollback |
 | 回帰検査 | `tests/test_exp004.py` | 変更対象に近いtestと全体check |
 
@@ -50,10 +52,8 @@
 
 | Priority | Requirement | 状態・理由 | Evidence |
 |---|---|---|---|
-| P1 | `entrypoints` | missing: 実行entrypointを特定できない。資料/資産なら「実行物なし」の明記が必要。 | `docs/engineering/README.md` |
-| P1 | `major_modules_and_packages` | partial: package/moduleはあるが、責務、依存方向、公開境界、影響範囲が不足。 | `config/` |
-| P1 | `observability` | missing: 可観測性の実装証拠を特定できない。生成文書の一般要件・提案は現行実装の証拠ではない。 | `ATTRIBUTION.md` |
-| P1 | `startup_and_verification_commands` | missing: 起動・検証commandを静的証拠から特定できず、生成文書にも実行可能な手順がない。 | `README.md` |
+| P1 | `codex_runtime_smoke` | focused testはPASS。実Codex manual/auto compact dispatchは未検証。 | `docs/codex/adapter-design.md` |
+| P1 | `composition_efficacy` | 3層同時発火は確認済みだが便益比較は未成立。 | `README.md` |
 
 ## スコープ境界
 

@@ -71,9 +71,22 @@ alias claude-px='ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude'
 
 Read the safety notes before enabling `pxpipe`. It is lossy by design and should not be used for byte-exact values such as commit SHAs, IDs, secrets, exact paths, migration names, or deploy targets.
 
-### 3. Use the Codex handoff protocol
+### 3. Use the Codex native-hook adapter
 
-Codex does not have Claude Code-style compaction hooks, so ASCS uses a protocol instead:
+Current Codex releases expose `PreCompact`, `PostCompact`, and
+`SessionStart(source=compact)` hooks. ASCS uses those native lifecycle events
+for a deterministic compact-boundary receipt and a one-shot recovery guard:
+
+- copy or merge `examples/codex/.codex/hooks.json`
+- copy `examples/codex/.codex/hooks/ascs_compact.py`
+- review and trust the exact hook definition with `/hooks`
+- keep the `AGENTS.md` handoff protocol as the state-writing contract and as a
+  fallback when project hooks are unavailable or disabled
+
+The hook never parses or copies the Codex transcript. It records only whether a
+transcript path was supplied and which known state files already exist.
+
+The portable fallback remains available:
 
 - copy or adapt `examples/codex/AGENTS.md`
 - create a `.agent-session/` directory
@@ -213,11 +226,11 @@ Stable upstream versions and immutable source revisions are recorded in [config/
 
 ## Codex reference stack
 
-The Claude Code and Codex adapters are intentionally separate — the same layer contracts, implemented on each runtime's native surface. Codex has no compaction lifecycle hooks, so this stack does not emulate them. The same Checkpoint/Recovery contracts become a **session handoff protocol**: an `AGENTS.md` that tells the agent to read `.agent-session/handoff.md` and state files before working, log decisions and failed attempts as it works, and write a handoff before stopping. The checkpoint snapshot uses the same 10 sections as a compact-plus state file, so handoffs can cross runtimes.
+The Claude Code and Codex adapters are intentionally separate — the same layer contracts, implemented on each runtime's native surface. Current Codex releases expose native compact lifecycle hooks. The reference adapter uses `PreCompact` and `PostCompact` to record a local, content-minimized boundary receipt, then `SessionStart(source=compact)` to inject a one-shot recovery guard. `AGENTS.md` still owns the durable behavior: update `.agent-session/` state while working, treat it as untrusted recovery context, and verify it before use. The same 10-section checkpoint shape remains portable across runtimes.
 
-This is a weaker guarantee than hooks — protocol adherence instead of deterministic execution — and is stated as such.
+Project hooks only load for trusted projects, non-managed hooks require review of their exact definition, and administrators can disable non-managed hooks. When the native hook is unavailable, ASCS degrades to the manual handoff protocol rather than claiming deterministic recovery.
 
-- Design: [docs/codex/adapter-design.md](docs/codex/adapter-design.md)
+- Native hook and fallback design: [docs/codex/adapter-design.md](docs/codex/adapter-design.md)
 - Drop-in protocol: [examples/codex/AGENTS.md](examples/codex/AGENTS.md)
 - Templates: [templates/](templates/)
 
@@ -309,10 +322,10 @@ This repository is an integration/reference architecture. It does not claim owne
 - [Start here](./docs/engineering/README.md)
 - [Architecture / system diagram](./docs/engineering/02_architecture.md)
 - [API](./docs/engineering/04_api.md) / [Data model](./docs/engineering/05_data_model.md) / [Screens](./docs/engineering/06_screen_design.md)
-- Detected check: manifest script未検出
-- Snapshot: API 0 / entity 1 / screen 0 / test files 8
+- Detected checks: `python3 -m unittest discover tests -v` and `python3 scripts/validate_repo.py --require-upstream-lock`
+- Snapshot: API 0 / persistent DB 0 / screen 0 / test files 9
 - Data sources: `scripts/exp004.py`, `scripts/exp005.py`
-- Handoff gaps: 4 P0/P1 items — [details](./docs/engineering/00_one_pager.md#引継ぎ時の未解決ギャップ)
+- Handoff gaps and non-goals — [details](./docs/engineering/00_one_pager.md#引継ぎ時の未解決ギャップ)
 
 > Generated from the current checkout. Existing ADR/schema/runbook remains authoritative; production state is not asserted.
 <!-- END GENERATED ENGINEERING HANDBOOK -->
