@@ -1,0 +1,4 @@
+{"condition": "baseline", "event": "preregistration", "note": "Pair 006-p1 fixed task, done definition, interruption after intended RED, metrics, Codex 0.144.4 gpt-5.6-sol, 20-minute ceiling, no retry", "pair_id": "006-p1", "schema_version": 1, "timestamp": "2026-07-16T02:38:46+00:00"}
+{"event": "checkpoint", "note": "Fixed interruption reached: focused regression RED; root .in_use/12345 changed file_count 1->2 and digest; source/docs untouched.", "schema_version": 1, "timestamp": "2026-07-17T00:49:31+00:00"}
+{"event": "resume-start", "note": "Second fresh Codex session started after fixed RED interruption.", "schema_version": 1, "timestamp": "2026-07-17T00:49:40+00:00"}
+{"event": "first-progress-edit", "note": "First post-resume progress observed: added nested .in_use tamper-detection regression before source fix.", "schema_version": 1, "timestamp": "2026-07-17T00:50:43+00:00"}

@@ -30,6 +30,9 @@ validate the full composition effect of pxpipe + session-health + compact-plus.
 | `2026-07-06-claude-code-restart-004-p2-treated/` | Experiment 004, Pair 2 treated arm — preregistered only; not run before closeout. |
 | `2026-07-06-claude-code-restart-004-p2-baseline/` | Experiment 004, Pair 2 baseline arm — preregistered only; not run before closeout. |
 | `2026-07-11-claude-code-restart-005-shared-scaffold/` | **Experiment 005 shared scaffold** — the frozen neutral `.agent-session/` scaffold for 005 treated arms (the 004 scaffold, inherited unchanged). Experiment 005 is **design-registered but not yet pre-registered**: see [docs/experiment-005-design.md](../docs/experiment-005-design.md). No arm directories exist yet — they are created at pre-registration, immediately before the run window, after the paid-runtime cost gate is frozen and approved. |
+| `2026-07-16-codex-doctor-in-use-006-summary.md` | Codex fixed-interruption n=1 before/after closeout. Both arms completed, but missing `arm_start` events keep the automated pair verdict incomplete; treated state also failed metadata trust validation. |
+| `2026-07-16-codex-doctor-in-use-006-p1-baseline/` | Experiment 006 baseline arm: no root ASCS protocol or state; reported-only metrics recorded. |
+| `2026-07-16-codex-doctor-in-use-006-p1-treated/` | Experiment 006 treated arm: root ASCS protocol and state; reported-only metrics recorded, with state-trust failure documented. |
 
 Timezone convention for all `events.jsonl` files: event `timestamp` fields and
 any clock times inside new `note` strings are UTC. Historical files remain

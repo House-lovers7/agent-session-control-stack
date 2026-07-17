@@ -4,6 +4,8 @@
 
 長時間動作する AI コーディングエージェントセッションを制御するための、参照アーキテクチャと軽量ツール層。
 
+ASCSは既存の3 OSSを置き換えず、それぞれの責務を安全に合成します。
+
 ASCS が合成するもの:
 
 - **Compression（圧縮）** — 肥大したコンテキストを安全に圧縮する
@@ -84,6 +86,15 @@ compact境界のreceiptと1回限りのrecovery guardを決定論的に動かし
 
 hookはCodex transcriptを解析・複製しません。transcript pathが渡されたかと、
 既知のstate fileが存在するかだけを記録します。
+
+Codexやモデルを起動せず、checked-in hookのJSON subprocess契約を検査できます:
+
+```bash
+python3 -B scripts/smoke_codex_compact.py
+```
+
+これは実runtime dispatchの証明ではありません。境界は
+[Codex synthetic smoke](docs/codex-compact-synthetic-smoke.md)に記録しています。
 
 portableなfallbackも引き続き利用できます:
 
@@ -301,5 +312,5 @@ ASCS は full-stack の composition effect をまだ測定していません。
 - 監査から修正・検証・資産化までの改善フローと現在の台帳: [improvement loop](docs/improvement-loop.md) · [`config/improvements.json`](config/improvements.json)
 - compact-plusの無課金marker・復旧契約検査: [synthetic smoke](docs/compact-plus-synthetic-smoke.md)
 - 設計原本（Phase 0、日本語）: [hook 責務分離](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md 案](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
-- Roadmap: Phase 0 設計 ✅ → Phase 1 docs-only 参照アーキテクチャ（本セット）→ Phase 2 実セッション before/after 測定（harness 準備済み — `scripts/ascs.py`。最初の n=1 before/after ペアを記録済み — [Experiment 002](experiments/2026-07-06-codex-handoff-002-summary.md)。合成効果は未測定）→ Phase 3 upstream 協調 → Phase 4+ ツール化（generator / 導入状態 doctor / 測定自動化、Phase 2 が撤退基準をクリアした場合のみ）
+- Roadmap: Phase 0 設計 ✅ → Phase 1 参照アーキテクチャ ✅ → Phase 2 実セッション before/after 測定（harness、read-only Doctor、保守的なmeasurement helperは実装済み。合成効果は未測定）→ Phase 3 upstream 協調 → Phase 4+ productization（config generatorと自動効果測定は、Phase 2 が撤退基準をクリアした場合のみ）
 - License: MIT — [LICENSE](LICENSE)

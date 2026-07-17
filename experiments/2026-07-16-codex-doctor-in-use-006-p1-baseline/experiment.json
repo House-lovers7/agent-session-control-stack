@@ -1,0 +1,26 @@
+{
+  "created_at": "2026-07-16T02:37:34+00:00",
+  "events_file": "events.jsonl",
+  "finished_at": "2026-07-17T00:56:25+00:00",
+  "gate_profile": "experiment-004",
+  "metrics": {
+    "human_corrections": 0,
+    "missed_checkpoint_items": 0,
+    "missed_state_files": "n/a",
+    "recovery_quality": 3,
+    "rejected_option_relapses": 0,
+    "repeated_failures": 1,
+    "resume_time_seconds": 63
+  },
+  "name": "codex-doctor-in-use-006-p1-baseline",
+  "report_file": "report.md",
+  "runtime": "codex",
+  "score": {
+    "failed_criteria": [],
+    "failed_criteria_count": 0,
+    "gate_profile": "experiment-004",
+    "scored_at": "2026-07-17T00:56:25+00:00",
+    "status": "REPORTED_ONLY"
+  },
+  "target_repo": "<isolated-checkout>/baseline"
+}

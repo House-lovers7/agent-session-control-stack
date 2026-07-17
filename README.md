@@ -4,6 +4,9 @@
 
 A reference architecture and lightweight tooling layer for controlling long-running AI coding agent sessions.
 
+ASCS does not replace the three upstream OSS projects; it composes their
+separate responsibilities safely.
+
 ASCS helps you compose:
 
 - **Compression** — reduce bulky context safely
@@ -85,6 +88,16 @@ for a deterministic compact-boundary receipt and a one-shot recovery guard:
 
 The hook never parses or copies the Codex transcript. It records only whether a
 transcript path was supplied and which known state files already exist.
+
+Exercise the checked-in JSON subprocess contract without starting Codex or a
+model:
+
+```bash
+python3 -B scripts/smoke_codex_compact.py
+```
+
+This does not prove live runtime dispatch. See the
+[Codex synthetic smoke boundary](docs/codex-compact-synthetic-smoke.md).
 
 The portable fallback remains available:
 
@@ -313,7 +326,7 @@ This repository is an integration/reference architecture. It does not claim owne
 - Assetized audit-to-fix workflow and current register: [improvement loop](docs/improvement-loop.md) · [`config/improvements.json`](config/improvements.json)
 - No-model compact-plus marker/recovery contract check: [synthetic smoke](docs/compact-plus-synthetic-smoke.md)
 - Design originals (Phase 0, Japanese): [hook responsibilities](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md draft](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
-- Roadmap: Phase 0 design ✅ → Phase 1 docs-only reference architecture (this set) → Phase 2 before/after measurement (harness ready — `scripts/ascs.py`; first n=1 before/after pair recorded — [Experiment 002](experiments/2026-07-06-codex-handoff-002-summary.md); composition effect still unmeasured) → Phase 3 upstream collaboration → Phase 4+ tooling (generator / install-state doctor / automated measurement), only if Phase 2 clears the withdrawal criteria
+- Roadmap: Phase 0 design ✅ → Phase 1 reference architecture ✅ → Phase 2 real-session before/after measurement (the harness, read-only Doctor, and conservative measurement helper are implemented; composition effect remains unmeasured) → Phase 3 upstream collaboration → Phase 4+ productization (config generator and automated benefit measurement only if Phase 2 clears the withdrawal criteria)
 - License: MIT — [LICENSE](LICENSE)
 
 <!-- BEGIN GENERATED ENGINEERING HANDBOOK -->

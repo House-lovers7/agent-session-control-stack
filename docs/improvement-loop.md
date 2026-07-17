@@ -43,6 +43,11 @@ in the current change and every asset path exists. `implemented` without a
 passing gate remains `in_verification`. Deferred items require a reason and a
 concrete reopening condition.
 
+`verification_result` is an immutable snapshot of the gate at `verified_at`.
+Do not rewrite an older item's historical test count when the suite grows;
+record a later regression or revalidation as a new independently verifiable
+item.
+
 ## 7. Asset promotion
 
 Durable outcomes return to the smallest reusable asset: code/test for behavior,

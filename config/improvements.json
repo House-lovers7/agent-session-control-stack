@@ -134,6 +134,54 @@
       "assets": ["scripts/smoke_compact_plus.py", "tests/test_compact_plus_smoke.py", "docs/compact-plus-synthetic-smoke.md", "plugins/ascs/scripts/ascs_doctor.py", "tests/test_ascs_doctor.py", "scripts/validate_repo.py", "tests/test_validate_repo.py", ".github/workflows/test.yml", "docs/upstream-compatibility.md", "docs/risk-register.md", "docs/measurement-checklist.md", "docs/user-guide.md", "docs/user-guide.ja.md"],
       "verification": "python3 -B -m unittest tests.test_compact_plus_smoke tests.test_ascs_doctor tests.test_validate_repo && python3 -B scripts/smoke_compact_plus.py && python3 -B scripts/validate_repo.py --require-upstream-lock",
       "next_gate": "real manual and auto Claude Code runtime dispatch smoke after manual authentication and separate paid-runtime approval"
+    },
+    {
+      "id": "IMP-012",
+      "title": "Exclude Claude runtime in-use markers from reviewed plugin content",
+      "severity": "P1",
+      "status": "verified",
+      "verified_at": "2026-07-16",
+      "verification_result": "PASS: focused RED/GREEN, real Doctor exit 0, compact-plus synthetic smoke, full 219-test suite, and repository validation.",
+      "evidence": "The real Doctor reproduced a false CONTENT MISMATCH because Claude Code added two root-level .in_use process markers to an otherwise byte-identical reviewed 1.0.4 cache. Experiment 006 narrowed the exclusion to numeric root-level .in_use/<pid> files while keeping lookalikes attested.",
+      "assets": ["plugins/ascs/scripts/ascs_doctor.py", "tests/test_ascs_doctor.py", "docs/upstream-compatibility.md"],
+      "verification": "python3 -B -m unittest discover -s tests -p 'test_ascs_doctor.py' && python3 -B plugins/ascs/scripts/ascs_doctor.py && python3 -B scripts/smoke_compact_plus.py",
+      "next_gate": "reopen if any non-runtime cache content can evade or falsely fail attestation"
+    },
+    {
+      "id": "IMP-013",
+      "title": "Assetize a no-model Codex compact-hook subprocess smoke",
+      "severity": "P1",
+      "status": "verified",
+      "verified_at": "2026-07-16",
+      "verification_result": "PASS: focused RED/GREEN, Codex subprocess smoke, full 219-test suite, repository validation, py_compile, and diff check; no Codex/model/API execution.",
+      "evidence": "Module-level tests did not prove the checked-in hook's executable JSON stdin/stdout contract or preserve the manual/auto trigger in the receipt.",
+      "assets": ["examples/codex/.codex/hooks/ascs_compact.py", "scripts/smoke_codex_compact.py", "tests/test_codex_compact_hook.py", "tests/test_codex_compact_smoke.py", "docs/codex-compact-synthetic-smoke.md", "scripts/validate_repo.py", "tests/test_validate_repo.py", ".github/workflows/test.yml"],
+      "verification": "python3 -B -m unittest discover -s tests -p 'test_codex_compact*.py' && python3 -B scripts/smoke_codex_compact.py && python3 -B scripts/validate_repo.py --require-upstream-lock",
+      "next_gate": "real manual and auto Codex runtime dispatch smoke after separate paid-runtime and hook-trust approval"
+    },
+    {
+      "id": "IMP-014",
+      "title": "Synchronize acceptance, roadmap, test evidence, and historical reproduction docs",
+      "severity": "P2",
+      "status": "verified",
+      "verified_at": "2026-07-16",
+      "verification_result": "PASS: full 219-test suite, repository validation, py_compile, and diff check.",
+      "evidence": "The acceptance checklist remained wholly unchecked, the roadmap described implemented diagnostics as future work, and the historical dogfood reproduction command did not pin pxpipe 0.8.0.",
+      "assets": ["README.md", "README.ja.md", "docs/acceptance-criteria.md", "docs/implementation-plan.md", "docs/case-study-dogfood-0.2.md", "docs/improvement-loop.md"],
+      "verification": "python3 -B scripts/validate_repo.py --require-upstream-lock && git diff --check",
+      "next_gate": "reopen when implementation status, acceptance evidence, or operational commands drift"
+    },
+    {
+      "id": "IMP-015",
+      "title": "Preserve and validate Codex state metadata after checkpoint writes",
+      "severity": "P1",
+      "status": "verified",
+      "verified_at": "2026-07-16",
+      "verification_result": "PASS: Experiment 006 reproduced invalid state authoring; protocol wording, validator regression, full 219-test suite, and repository validation pass.",
+      "evidence": "The treated Codex arm removed four required ascs-state-metadata blocks and left two placeholder envelopes. Useful recovery content survived, but live state trust failed. The drop-in protocol now requires exactly one complete envelope and a post-write state trust check.",
+      "assets": ["examples/codex/AGENTS.md", "scripts/validate_repo.py", "tests/test_validate_repo.py", "experiments/2026-07-16-codex-doctor-in-use-006-summary.md"],
+      "verification": "python3 -B -m unittest discover -s tests -p 'test_validate_repo.py' && python3 -B scripts/validate_repo.py --require-upstream-lock",
+      "next_gate": "repeat a treated fixed-interruption case and require live check_state PASS before claiming protocol adherence"
     }
   ]
 }

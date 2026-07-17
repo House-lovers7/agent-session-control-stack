@@ -39,10 +39,11 @@ not automate collection.
 ## Secondary Metrics
 
 - [ ] Claude Code: session-health hot/warn signals observed.
-- [ ] Claude Code: no-model synthetic compact-plus manual/auto marker and one-shot recovery smoke recorded.
+- [x] Claude Code: no-model synthetic compact-plus manual/auto marker and one-shot recovery smoke recorded (2026-07-16).
 - [ ] Claude Code: real manual/auto runtime dispatch, state capture, and recovery marker behavior observed separately.
 - [ ] Claude Code: pxpipe compression status observed, if enabled.
-- [ ] Codex: checkpoint trigger adherence recorded.
+- [x] Codex: no-model JSON subprocess smoke records synthetic manual/auto trigger receipts, one-shot recovery, and sensitive-value non-persistence (2026-07-16).
+- [ ] Codex: real manual/auto runtime dispatch and checkpoint trigger adherence recorded.
 - [ ] Any missing state file or stale handoff recorded.
 
 ## Stop Conditions

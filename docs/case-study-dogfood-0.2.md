@@ -51,7 +51,7 @@ claude plugin install compact-plus@ascs
 claude plugin install ascs@ascs   # then run /ascs:doctor in a session
 
 # pxpipe is a separate opt-in — read docs/claude-code/pxpipe-safety.md first
-npx -y pxpipe-proxy
+npx -y pxpipe-proxy@0.8.0
 ANTHROPIC_BASE_URL=http://127.0.0.1:47821 claude
 ```
 

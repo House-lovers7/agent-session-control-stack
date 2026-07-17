@@ -2,7 +2,7 @@
 
 > Phase 0 設計原本 / **内部の作業計画メモ**（authoring workflow）。公開ドキュメントの正典は README と docs/claude-code/・docs/codex/。本書は当初計画と現在地を分離し、各フェーズの成果物・担当・停止条件を定義する。
 
-## Current implementation status (2026-07-13)
+## Current implementation status (2026-07-16)
 
 - **Phase 1 reference architecture: implemented.** README、runtime別adapter、
   examples、templatesが公開可能な形で存在する。
@@ -18,6 +18,9 @@
   公式Hooks仕様へ追従し、PreCompact/PostCompact receiptと
   SessionStart(source=compact)のone-shot recovery guardを追加した。
   AGENTS.md protocolはstate本文更新とhook無効時のfallbackとして残す。
+- **Synthetic Codex compact-hook smoke: implemented.** checked-in hookを
+  subprocessとして合成manual/auto入力で実行し、trigger receipt、one-shot、
+  機密値非保存を検査する。Codex/model/APIと実runtime dispatchは含まない。
 - **Automated benefit measurement: not implemented.** transcript自動収集、
   dashboard、因果推定、無人before/after集計は提供しない。
 - **Full-stack composition benefit: unvalidated.** mechanismの同時発火はdogfoodで
@@ -25,9 +28,9 @@
   未実証として扱う。
 
 この先行実装は、当初のPhase 4–6を完了扱いにする例外ではない。Evidenceを安全に
-集め、過大claimを拒否するための最小診断だけをPhase 2へ前倒しした。Config
-generator、無人Doctor、automated benefit measurement、外部提案は、Phase 2の
-撤退基準をクリアするまで着手判断を保留する。
+集め、過大claimを拒否するためのread-only Doctorとmeasurement helperだけを
+Phase 2へ前倒しした。Config generator、automated benefit measurement、外部提案は、
+Phase 2の撤退基準をクリアするまで着手判断を保留する。
 
 ## 0. 分担原則
 
@@ -96,8 +99,8 @@ agent-session-control-stack/
 ## Phase 4 以降（ROADMAP、着手判断は Phase 2 の結果次第）
 
 - Phase 4: Config generator（settings 例 / AGENTS.md / state templates の生成）
-- Phase 5: Doctor script（3 ツールの導入状態と二重通知構成の検査）
-- Phase 6: Measurement tool（before/after の自動集計）
+- Phase 5: Doctor productization（read-only safety diagnosticはPhase 2へ前倒し済み）
+- Phase 6: Automated benefit measurement（保守的な手動集計helperはPhase 2へ前倒し済み）
 - Phase 7: Upstream proposals（session-health / compact-plus への issue、pxpipe への safety doc 提案）
 
 ## 全フェーズ共通の撤退基準
