@@ -37,6 +37,16 @@ REVIEWED_SNAPSHOT_PATH = (
 CONTENT_REVIEWED_PLUGINS = frozenset({"compact-plus"})
 
 
+def is_runtime_in_use_marker(relative):
+    """Return whether a relative path is a root-level runtime PID marker."""
+    return (
+        len(relative.parts) == 2
+        and relative.parts[0] == ".in_use"
+        and relative.parts[1].isascii()
+        and relative.parts[1].isdigit()
+    )
+
+
 def say(message=""):
     print(message)
 
@@ -54,9 +64,10 @@ def hash_plugin_tree(root):
     """Return a deterministic content digest without following links.
 
     sha256-tree-v1 hashes newline-delimited compact JSON records containing a
-    POSIX relative path and that file's SHA-256. Git metadata is excluded;
-    every other regular file is included. Links, special files, oversized
-    trees, and trees that change shape while being read fail closed.
+    POSIX relative path and that file's SHA-256. Git metadata and root-level
+    ``.in_use/<pid>`` runtime marker files are excluded; every other regular
+    file is included. Links, special files, oversized trees, and trees that
+    change shape while being read fail closed.
     """
     candidate = Path(root)
     if candidate.is_symlink():
@@ -77,6 +88,8 @@ def hash_plugin_tree(root):
             continue
         if not path.is_file():
             raise ValueError("plugin tree contains a special file")
+        if is_runtime_in_use_marker(relative):
+            continue
         entries.append((relative.as_posix(), path))
         if len(entries) > PLUGIN_TREE_FILE_LIMIT:
             raise ValueError("plugin tree has too many files")

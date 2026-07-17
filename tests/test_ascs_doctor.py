@@ -73,6 +73,42 @@ class TestAscsDoctor(unittest.TestCase):
         self.assertEqual(tampered[1], 1)
         self.assertNotEqual(original[0], tampered[0])
 
+    def test_plugin_tree_digest_ignores_claude_runtime_in_use_markers(self):
+        doctor = load_doctor_helper()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            hook = root / "hooks" / "recovery.sh"
+            hook.parent.mkdir()
+            hook.write_text("reviewed\n", encoding="utf-8")
+            expected = doctor.hash_plugin_tree(root)
+
+            marker_dir = root / ".in_use"
+            marker_dir.mkdir()
+            (marker_dir / "12345").write_text("", encoding="utf-8")
+            observed = doctor.hash_plugin_tree(root)
+
+        self.assertEqual(observed, expected)
+
+    def test_plugin_tree_digest_detects_files_outside_runtime_marker_boundary(self):
+        doctor = load_doctor_helper()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture = root / "fixture.txt"
+            fixture.write_text("reviewed fixture\n", encoding="utf-8")
+            reviewed = doctor.hash_plugin_tree(root)
+
+            for relative in (
+                Path(".in_use") / "not-a-pid",
+                Path(".in_use") / "12345" / "payload",
+                Path("hooks") / ".in_use" / "12345",
+            ):
+                candidate = root / relative
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                candidate.write_text("tampered\n", encoding="utf-8")
+                with_extra_file = doctor.hash_plugin_tree(root)
+                self.assertNotEqual(with_extra_file, reviewed, str(relative))
+                candidate.unlink()
+
     def run_doctor(
         self,
         plugins,

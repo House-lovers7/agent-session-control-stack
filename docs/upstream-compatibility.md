@@ -29,8 +29,11 @@ The Doctor packages `plugins/ascs/reviewed-upstreams.json`, a minimal runtime
 snapshot of the two plugin versions and revisions above. For compact-plus it
 also carries the reviewed cache-tree digest. `sha256-tree-v1` is SHA-256 over
 newline-delimited compact JSON records of `[relative POSIX path, file SHA-256]`,
-sorted by path. It includes every regular plugin file, excludes `.git`, and
-rejects links, special files, more than 2,048 files, or more than 64 MiB.
+sorted by path. It includes every regular plugin file, excludes `.git` and
+Claude Code's root-level `.in_use/<pid>` process-marker files, and rejects
+links, special files, more than 2,048 reviewed files, or more than 64 MiB.
+Non-PID names, deeper paths under `.in_use`, and same-named directories nested
+under reviewed content remain attested.
 Repository validation requires the snapshot to match
 `config/upstreams.lock.json` exactly.
 
