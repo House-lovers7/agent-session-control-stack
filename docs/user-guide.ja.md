@@ -135,6 +135,16 @@ hookはtranscript本文を解析・複製しません。`PreCompact`が内容を
 recovery guardを追加します。guardはstateを読む前の検査と、current sourceによる
 回復内容の再検証を要求します。
 
+実runtime確認の前に、Codexやモデルを起動せずexact JSON subprocess境界を検査します:
+
+```bash
+python3 -B scripts/smoke_codex_compact.py
+```
+
+合成 `manual` / `auto` receipt、one-shot recovery、機密値の非保存を検査しますが、
+runtime dispatchの証明にはしません。境界は
+[Codex synthetic smoke contract](codex-compact-synthetic-smoke.md)を参照してください。
+
 project hookはtrusted projectでのみloadされ、userまたはmanaged policyで無効にできます。
 その場合はmanual handoff protocolを使い、決定論的compact recoveryを主張しません。
 

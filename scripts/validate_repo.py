@@ -72,11 +72,17 @@ STATE_PROTOCOL_PHRASES = (
     "raw customer or personal data",
     "verbatim untrusted instructions",
 )
+CODEX_STATE_WRITE_PHRASES = (
+    "preserve exactly one complete metadata block",
+    "state trust checker",
+    "failed check means the state is not a valid recovery artifact",
+)
 IMPLEMENTATION_STATUS_MARKERS = (
-    "Current implementation status (2026-07-13)",
+    "Current implementation status (2026-07-16)",
     "Phase 2 measurement harness: implemented",
     "Install-state Doctor: implemented early as a safety diagnostic",
     "Synthetic compact-plus recovery smoke: implemented",
+    "Synthetic Codex compact-hook smoke: implemented",
     "Automated benefit measurement: not implemented",
     "Full-stack composition benefit: unvalidated",
 )
@@ -87,6 +93,9 @@ IMPLEMENTED_STATUS_FILES = {
     ),
     "Synthetic compact-plus recovery smoke: implemented": (
         "scripts/smoke_compact_plus.py"
+    ),
+    "Synthetic Codex compact-hook smoke: implemented": (
+        "scripts/smoke_codex_compact.py"
     ),
 }
 IMPROVEMENT_ID = re.compile(r"^IMP-[0-9]{3}$")
@@ -129,6 +138,25 @@ CODEX_COMPACT_HOOK_ASSETS = (
     "examples/codex/.codex/hooks/ascs_compact.py",
     "docs/codex/adapter-design.md",
     "tests/test_codex_compact_hook.py",
+)
+CODEX_COMPACT_SMOKE_ASSETS = (
+    "scripts/smoke_codex_compact.py",
+    "tests/test_codex_compact_smoke.py",
+    "docs/codex-compact-synthetic-smoke.md",
+)
+CODEX_COMPACT_SMOKE_SCRIPT_MARKERS = (
+    "TRANSCRIPT_SENTINEL",
+    'TRIGGERS = ("manual", "auto")',
+    "subprocess.run",
+    "receipt_consumed_once",
+    "sensitive_values_absent",
+)
+CODEX_COMPACT_SMOKE_DOC_MARKERS = (
+    "manual",
+    "auto",
+    "no Codex/model/API execution",
+    "runtime dispatch remains unverified",
+    "Human Approval Gate",
 )
 CODEX_COMPACT_EVENTS = {
     "PreCompact": "^(manual|auto)$",
@@ -520,6 +548,45 @@ def validate_codex_compact_hook_assets(root):
     return errors
 
 
+def validate_codex_compact_smoke_assets(root):
+    """Keep the Codex subprocess smoke executable, tested, and bounded."""
+    errors = []
+    for relative in CODEX_COMPACT_SMOKE_ASSETS:
+        if not (root / relative).is_file():
+            errors.append(f"{relative}: required Codex compact smoke asset is missing")
+
+    script_path = root / "scripts" / "smoke_codex_compact.py"
+    if script_path.is_file():
+        script = script_path.read_text(encoding="utf-8")
+        for marker in CODEX_COMPACT_SMOKE_SCRIPT_MARKERS:
+            if marker not in script:
+                errors.append(
+                    f"scripts/smoke_codex_compact.py: missing safety marker {marker!r}"
+                )
+
+    docs_path = root / "docs" / "codex-compact-synthetic-smoke.md"
+    if docs_path.is_file():
+        docs = docs_path.read_text(encoding="utf-8")
+        for marker in CODEX_COMPACT_SMOKE_DOC_MARKERS:
+            if marker not in docs:
+                errors.append(
+                    "docs/codex-compact-synthetic-smoke.md: missing boundary "
+                    f"{marker!r}"
+                )
+
+    workflow_path = root / ".github" / "workflows" / "test.yml"
+    try:
+        workflow = workflow_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        errors.append(f".github/workflows/test.yml: cannot read: {exc}")
+    else:
+        if "scripts/smoke_codex_compact.py" not in workflow:
+            errors.append(
+                ".github/workflows/test.yml: Codex compact smoke CLI must be py-compiled"
+            )
+    return errors
+
+
 def validate_upstream_lock(root, require=False):
     """Validate lock shape and its marketplace/docs consumers without network access."""
     lock_path = root / "config" / "upstreams.lock.json"
@@ -853,6 +920,12 @@ def validate_state_scaffolds(root):
         for phrase in STATE_PROTOCOL_PHRASES:
             if phrase not in lowered:
                 errors.append(f"{relative_text}: missing trust boundary phrase {phrase!r}")
+        if relative_text == "examples/codex/AGENTS.md":
+            for phrase in CODEX_STATE_WRITE_PHRASES:
+                if phrase not in lowered:
+                    errors.append(
+                        f"{relative_text}: missing state-write phrase {phrase!r}"
+                    )
 
     for relative_text in (
         "examples/codex/.agent-session/.gitignore",
@@ -884,6 +957,7 @@ def validate(root=REPO_ROOT, require_upstream_lock=False):
     errors.extend(validate_improvement_loop(root))
     errors.extend(validate_compact_plus_smoke_assets(root))
     errors.extend(validate_codex_compact_hook_assets(root))
+    errors.extend(validate_codex_compact_smoke_assets(root))
     errors.extend(validate_upstream_lock(root, require=require_upstream_lock))
     errors.extend(validate_reviewed_plugin_snapshot(root))
     errors.extend(validate_state_scaffolds(root))
@@ -907,7 +981,7 @@ def main(argv=None):
     print(
         "Repository validation passed (JSON, manifests, links, doctor safety, "
         "implementation status, improvement loop, compact-plus synthetic smoke, "
-        "Codex native compact hook, "
+        "Codex native compact hook and synthetic smoke, "
         "upstream lock, reviewed plugin snapshot, state trust)."
     )
     return 0

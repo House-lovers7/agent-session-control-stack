@@ -57,9 +57,9 @@ retrieved 2026-07-16.
 ## Native lifecycle path
 
 1. `PreCompact(manual|auto)` writes a local receipt containing only a hashed
-   session key, timestamp, turn/transcript availability as booleans, and the
-   names of known state files that already exist. Parallel sessions use
-   independent receipts.
+   session key, the safe `manual|auto` trigger, timestamp, turn/transcript
+   availability as booleans, and the names of known state files that already
+   exist. Parallel sessions use independent receipts.
 2. `PostCompact(manual|auto)` closes the matching receipt.
 3. `SessionStart(source=compact)` consumes the same-session receipt once and
    adds a recovery guard as developer context.
@@ -107,3 +107,8 @@ are verified end to end.
 The native hook raises the guarantee for detecting compact boundaries. It does
 not prove that the agent maintained complete state, nor that ASCS improves
 productivity; both remain measurement targets.
+
+Run `python3 -B scripts/smoke_codex_compact.py` to exercise the exact hook as a
+JSON stdin/stdout subprocess for both triggers. This does not start Codex and
+does not close the live runtime-dispatch gap; see
+[`codex-compact-synthetic-smoke.md`](../codex-compact-synthetic-smoke.md).

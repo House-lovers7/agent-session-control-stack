@@ -127,6 +127,7 @@ def handle_event(
 
     if event == "PreCompact":
         turn_id = payload.get("turn_id")
+        trigger = payload.get("trigger")
         session_dir = repo / ".agent-session"
         present = [
             relative
@@ -136,6 +137,7 @@ def handle_event(
         receipt: dict[str, object] = {
             "schema_version": 1,
             "session_key": key,
+            "trigger": trigger if trigger in {"manual", "auto"} else "unknown",
             "turn_available": isinstance(turn_id, str) and bool(SAFE_ID.fullmatch(turn_id)),
             "phase": "pre_compact",
             "recorded_at": utc_text(now),

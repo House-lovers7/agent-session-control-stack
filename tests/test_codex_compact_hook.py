@@ -37,6 +37,7 @@ class TestCodexCompactHook(unittest.TestCase):
                     "session_id": "session-1",
                     "turn_id": "turn-1",
                     "cwd": str(repo),
+                    "trigger": "manual",
                     "transcript_path": "/private/sensitive/transcript.jsonl",
                 },
                 now=self.now,
@@ -48,6 +49,7 @@ class TestCodexCompactHook(unittest.TestCase):
             receipt_path = receipts[0]
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             self.assertEqual(receipt["phase"], "pre_compact")
+            self.assertEqual(receipt["trigger"], "manual")
             self.assertTrue(receipt["transcript_available"])
             self.assertNotIn("transcript_path", receipt)
             self.assertNotIn("session_id", receipt)
@@ -60,6 +62,7 @@ class TestCodexCompactHook(unittest.TestCase):
                     "session_id": "session-1",
                     "turn_id": "turn-1",
                     "cwd": str(repo),
+                    "trigger": "manual",
                 },
                 now=self.now,
             )
@@ -90,6 +93,7 @@ class TestCodexCompactHook(unittest.TestCase):
                     "hook_event_name": "PreCompact",
                     "session_id": "session-1",
                     "cwd": str(repo),
+                    "trigger": "auto",
                 },
                 now=self.now,
             )
@@ -144,11 +148,16 @@ class TestCodexCompactHook(unittest.TestCase):
                         "hook_event_name": "PreCompact",
                         "session_id": session_id,
                         "cwd": str(repo),
+                        "trigger": "manual" if session_id == "session-1" else "auto",
                     },
                     now=self.now,
                 )
             receipts = list((repo / ".agent-session" / "hook-events").glob("compact-*.json"))
             self.assertEqual(len(receipts), 2)
+            self.assertEqual(
+                {json.loads(path.read_text(encoding="utf-8"))["trigger"] for path in receipts},
+                {"manual", "auto"},
+            )
             for session_id in ("session-1", "session-2"):
                 result = self.hook.handle_event(
                     {

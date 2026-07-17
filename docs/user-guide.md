@@ -141,6 +141,17 @@ content-minimized receipt, `PostCompact` closes it, and
 the agent to validate state before reading it and to verify every recovered
 claim against current sources.
 
+Before a live runtime test, exercise the exact JSON subprocess boundary without
+starting Codex or a model:
+
+```bash
+python3 -B scripts/smoke_codex_compact.py
+```
+
+This verifies synthetic `manual` and `auto` receipts, one-shot recovery, and
+sensitive-value non-persistence. It does not prove runtime dispatch; see the
+[Codex synthetic smoke contract](codex-compact-synthetic-smoke.md).
+
 Project hooks require a trusted project and can be disabled by user or managed
 policy. In those environments, use the manual handoff protocol below; do not
 claim deterministic compact recovery.

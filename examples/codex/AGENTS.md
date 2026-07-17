@@ -50,7 +50,13 @@
 - Keep bulky content (long logs, full file dumps, raw tool output) out of
   state files; reference paths instead.
 - On every meaningful update, refresh repository, branch, commit, session,
-  update-time, and expiry metadata. Use repository-relative paths only.
+  update-time, and expiry metadata inside the existing
+  `ascs-state-metadata` block. Preserve exactly one complete metadata block in
+  every state file; do not replace it with prose fields. Use
+  repository-relative paths only.
+- After writing checkpoint or handoff state, run the repository's state trust
+  checker when available. A failed check means the state is not a valid
+  recovery artifact; repair it or report it as untrusted before stopping.
 
 ### Before stopping, switching models, or starting a new session
 - Update `.agent-session/handoff.md`: goal, current phase, next action,

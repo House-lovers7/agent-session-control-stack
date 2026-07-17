@@ -65,6 +65,38 @@ class TestValidateRepo(unittest.TestCase):
         validator = load_validator()
         self.assertEqual(validator.validate_codex_compact_hook_assets(REPO_ROOT), [])
 
+    def test_codex_compact_synthetic_smoke_assets_are_machine_checked(self):
+        validator = load_validator()
+        self.assertTrue(hasattr(validator, "validate_codex_compact_smoke_assets"))
+        self.assertEqual(
+            validator.validate_codex_compact_smoke_assets(REPO_ROOT), []
+        )
+
+    def test_codex_compact_smoke_rejects_runtime_boundary_drift(self):
+        validator = load_validator()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.copy_paths(
+                root,
+                (
+                    *validator.CODEX_COMPACT_SMOKE_ASSETS,
+                    ".github/workflows/test.yml",
+                ),
+            )
+            docs_path = root / "docs/codex-compact-synthetic-smoke.md"
+            docs_path.write_text(
+                docs_path.read_text(encoding="utf-8").replace(
+                    "runtime dispatch remains unverified",
+                    "runtime dispatch verified",
+                ),
+                encoding="utf-8",
+            )
+            errors = validator.validate_codex_compact_smoke_assets(root)
+        self.assertTrue(
+            any("runtime dispatch remains unverified" in error for error in errors),
+            errors,
+        )
+
     def test_codex_hook_validation_rejects_missing_auto_matcher(self):
         validator = load_validator()
         with TemporaryDirectory() as tmp:
@@ -215,6 +247,33 @@ class TestValidateRepo(unittest.TestCase):
     def test_current_state_scaffolds_satisfy_trust_contract(self):
         validator = load_validator()
         self.assertEqual(validator.validate_state_scaffolds(REPO_ROOT), [])
+
+    def test_codex_protocol_requires_metadata_preservation_after_state_write(self):
+        validator = load_validator()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            required = (
+                *validator.STATE_METADATA_FILES,
+                *validator.STATE_PROTOCOL_FILES,
+                "examples/codex/.agent-session/.gitignore",
+                "examples/claude-code/stack-demo/.agent-session/.gitignore",
+                ".gitignore",
+                "docs/state-trust-contract.md",
+                "scripts/check_state.py",
+            )
+            self.copy_paths(root, required)
+            protocol = root / "examples/codex/AGENTS.md"
+            protocol.write_text(
+                protocol.read_text(encoding="utf-8").replace(
+                    "Preserve exactly one complete metadata block",
+                    "Keep metadata",
+                ),
+                encoding="utf-8",
+            )
+            errors = validator.validate_state_scaffolds(root)
+        self.assertTrue(
+            any("missing state-write phrase" in error for error in errors), errors
+        )
 
     def test_state_scaffold_rejects_expiry_over_seven_days(self):
         validator = load_validator()

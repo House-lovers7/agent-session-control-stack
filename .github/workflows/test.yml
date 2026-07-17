@@ -35,4 +35,4 @@ jobs:
         run: |
           bash -n plugins/ascs/scripts/ascs_doctor.sh
           shellcheck plugins/ascs/scripts/ascs_doctor.sh
-          python3 -m py_compile plugins/ascs/scripts/ascs_doctor.py scripts/validate_repo.py scripts/check_state.py scripts/experiment_common.py scripts/exp003.py scripts/exp004.py scripts/exp005.py scripts/smoke_compact_plus.py examples/codex/.codex/hooks/ascs_compact.py
+          python3 -m py_compile plugins/ascs/scripts/ascs_doctor.py scripts/validate_repo.py scripts/check_state.py scripts/experiment_common.py scripts/exp003.py scripts/exp004.py scripts/exp005.py scripts/smoke_compact_plus.py scripts/smoke_codex_compact.py examples/codex/.codex/hooks/ascs_compact.py
