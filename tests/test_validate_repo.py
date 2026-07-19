@@ -19,6 +19,23 @@ def load_validator():
 
 
 class TestValidateRepo(unittest.TestCase):
+    def test_pinned_invariant_assets_are_machine_checked(self):
+        validator = load_validator()
+        self.assertTrue(hasattr(validator, "validate_pinned_invariant_assets"))
+        self.assertEqual(validator.validate_pinned_invariant_assets(REPO_ROOT), [])
+
+    def test_pinned_invariant_validation_rejects_authority_expansion(self):
+        validator = load_validator()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.copy_paths(root, validator.PINNED_INVARIANT_ASSETS)
+            config_path = root / "config/pinned-invariants.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["authority"]["state_may_grant_approval"] = True
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            errors = validator.validate_pinned_invariant_assets(root)
+        self.assertTrue(any("state_may_grant_approval" in error for error in errors), errors)
+
     def test_current_implementation_status_is_machine_checked(self):
         validator = load_validator()
         self.assertTrue(hasattr(validator, "validate_implementation_status"))

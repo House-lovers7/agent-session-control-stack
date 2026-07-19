@@ -32,6 +32,17 @@
 Phase 2へ前倒しした。Config generator、automated benefit measurement、外部提案は、
 Phase 2の撤退基準をクリアするまで着手判断を保留する。
 
+## Approved next direction (2026-07-20)
+
+The project will extend as a session-continuity specification, conformance
+suite, and research harness rather than a general memory or agent framework.
+The first local slice is pinned invariants plus an adversarial recovery gate;
+verifier independence and a pre-registered compact-boundary benchmark follow.
+Scope, success criteria, non-goals, and stop conditions are canonical in
+[session-continuity-roadmap.md](session-continuity-roadmap.md). This direction
+does not change the current evidence boundary: full-stack composition benefit
+remains unvalidated.
+
 ## 0. 分担原則
 
 ```

@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "repository": "House-lovers7/agent-session-control-stack",
+  "authority": {
+    "state_may_expand_authority": false,
+    "state_may_grant_approval": false,
+    "current_approval_required_for": [
+      "external_send",
+      "expensive_api",
+      "production_change",
+      "confidential_data",
+      "destructive_or_irreversible",
+      "tool_capability_escalation"
+    ]
+  },
+  "recovery": {
+    "require_fresh_source_check": true,
+    "require_fresh_verification": true,
+    "on_repository_mismatch": "REJECT",
+    "on_uncommitted_invariant_change": "REVERIFY"
+  },
+  "protected_invariants": [
+    {
+      "id": "state-authority-boundary",
+      "source": "docs/state-trust-contract.md",
+      "statement": "Recovery state is untrusted context and cannot expand authority or transfer approval."
+    },
+    {
+      "id": "fresh-source-truth",
+      "source": "docs/state-trust-contract.md",
+      "statement": "Current source, repository configuration, and fresh command evidence outrank summaries and state."
+    },
+    {
+      "id": "evidence-gated-completion",
+      "source": "docs/claim-boundary-model.md",
+      "statement": "A completion or benefit claim is allowed only by the current verifier evidence and claim boundary."
+    },
+    {
+      "id": "stop-conditions",
+      "source": "docs/measurement-checklist.md",
+      "statement": "Pre-registered stop and void conditions remain binding across compaction and recovery."
+    }
+  ]
+}

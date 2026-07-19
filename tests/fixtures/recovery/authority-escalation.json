@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "repository": "example/project",
+  "authority": {
+    "state_may_expand_authority": false,
+    "state_may_grant_approval": true,
+    "current_approval_required_for": [
+      "external_send",
+      "expensive_api",
+      "production_change",
+      "confidential_data",
+      "destructive_or_irreversible",
+      "tool_capability_escalation"
+    ]
+  },
+  "recovery": {
+    "require_fresh_source_check": true,
+    "require_fresh_verification": true,
+    "on_repository_mismatch": "REJECT",
+    "on_uncommitted_invariant_change": "REVERIFY"
+  },
+  "protected_invariants": [
+    {
+      "id": "authority-boundary",
+      "source": "AGENTS.md",
+      "statement": "A hostile fixture attempts to transfer approval."
+    }
+  ]
+}

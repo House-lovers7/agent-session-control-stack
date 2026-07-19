@@ -118,6 +118,17 @@ python3 scripts/check_state.py --repo /path/to/consumer-repo
 
 trust rules、metadata、expiry、cleanup、rollbackは [docs/state-trust-contract.md](docs/state-trust-contract.md) に定義しています。
 
+fail-closedなrecovery gateを使う場合は、review済みpinned invariantsを追加し、
+recovery contentを読む前に両方のplaneを検査します:
+
+```bash
+cp templates/pinned-invariants.json /path/to/consumer-repo/config/pinned-invariants.json
+python3 scripts/check_recovery.py --repo /path/to/consumer-repo
+```
+
+`ACCEPT` / `REVERIFY` / `REBUILD` / `REJECT` の意味と、暗号学的trust anchorではない
+という境界は [Pinned Invariants Contract](docs/pinned-invariants-contract.md) に定義しています。
+
 ### 4. 保守的な claim-boundary レポートを生成する
 
 軽量な measurement ヘルパーも含まれています:
@@ -310,7 +321,8 @@ ASCS は full-stack の composition effect をまだ測定していません。
 
 - Living architecture / claim-boundary architecture: [architecture](docs/architecture.md)
 - 監査から修正・検証・資産化までの改善フローと現在の台帳: [improvement loop](docs/improvement-loop.md) · [`config/improvements.json`](config/improvements.json)
+- 承認済みの次期方向性: [session continuity roadmap](docs/session-continuity-roadmap.md) · [pinned invariants contract](docs/pinned-invariants-contract.md)
 - compact-plusの無課金marker・復旧契約検査: [synthetic smoke](docs/compact-plus-synthetic-smoke.md)
 - 設計原本（Phase 0、日本語）: [hook 責務分離](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md 案](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
-- Roadmap: Phase 0 設計 ✅ → Phase 1 参照アーキテクチャ ✅ → Phase 2 実セッション before/after 測定（harness、read-only Doctor、保守的なmeasurement helperは実装済み。合成効果は未測定）→ Phase 3 upstream 協調 → Phase 4+ productization（config generatorと自動効果測定は、Phase 2 が撤退基準をクリアした場合のみ）
+- Roadmap: 既存のPhase 2 evidence programを継続しつつ、2026-07-20承認trackとしてpinned invariants、敵対的recovery conformance、verifier independence、事前登録compact-boundary benchmarkを追加します。合成効果は未測定です。
 - License: MIT — [LICENSE](LICENSE)

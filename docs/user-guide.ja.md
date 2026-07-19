@@ -159,6 +159,16 @@ python3 scripts/check_state.py --repo /path/to/consumer-repo
 
 Exit `0` = 合格（または state なし）、`2` = 陳腐化（使う前に再構築）、`1` = 不正または unsafe（無視する）。権限境界の全文は [state-trust-contract.md](state-trust-contract.md) を参照してください。
 
+`config/pinned-invariants.json` を採用するprojectでは、review済みproject invariantsと
+live stateを1つのread-only commandでgateできます:
+
+```bash
+python3 scripts/check_recovery.py --repo /path/to/consumer-repo
+```
+
+`ACCEPT`であってもfresh sourceとverifier evidenceは必要です。判定境界は
+[pinned-invariants-contract.md](pinned-invariants-contract.md)を参照してください。
+
 state ファイルは compact-plus と同じ 10 セクションを使うため、handoff は runtime をまたげます。設計の詳細: [codex/adapter-design.md](codex/adapter-design.md)。
 
 ## 6. 信じる代わりに測る: `scripts/ascs.py`

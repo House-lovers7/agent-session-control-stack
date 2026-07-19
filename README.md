@@ -123,6 +123,18 @@ python3 scripts/check_state.py --repo /path/to/consumer-repo
 Trust rules, metadata, expiry, cleanup, and rollback are defined in
 [docs/state-trust-contract.md](docs/state-trust-contract.md).
 
+For a fail-closed recovery gate, add the reviewed pinned-invariants file and
+check both planes before reading recovery content:
+
+```bash
+cp templates/pinned-invariants.json /path/to/consumer-repo/config/pinned-invariants.json
+python3 scripts/check_recovery.py --repo /path/to/consumer-repo
+```
+
+The four outcomes (`ACCEPT`, `REVERIFY`, `REBUILD`, `REJECT`) and the limit of
+this non-cryptographic trust check are defined in the
+[Pinned Invariants Contract](docs/pinned-invariants-contract.md).
+
 ### 4. Generate a conservative claim-boundary report
 
 ASCS also includes a lightweight measurement helper:
@@ -324,9 +336,10 @@ This repository is an integration/reference architecture. It does not claim owne
 
 - Living architecture / claim-boundary architecture: [architecture](docs/architecture.md)
 - Assetized audit-to-fix workflow and current register: [improvement loop](docs/improvement-loop.md) · [`config/improvements.json`](config/improvements.json)
+- Approved next direction: [session continuity roadmap](docs/session-continuity-roadmap.md) · [pinned invariants contract](docs/pinned-invariants-contract.md)
 - No-model compact-plus marker/recovery contract check: [synthetic smoke](docs/compact-plus-synthetic-smoke.md)
 - Design originals (Phase 0, Japanese): [hook responsibilities](docs/hook-responsibilities.md) · [adapter interface](docs/adapter-interface.md) · [Codex AGENTS.md draft](docs/codex/agents-md-draft.md) · [implementation plan](docs/implementation-plan.md) · [acceptance criteria](docs/acceptance-criteria.md) · [risk register](docs/risk-register.md) · [measurement plan](docs/measurement-plan.md)
-- Roadmap: Phase 0 design ✅ → Phase 1 reference architecture ✅ → Phase 2 real-session before/after measurement (the harness, read-only Doctor, and conservative measurement helper are implemented; composition effect remains unmeasured) → Phase 3 upstream collaboration → Phase 4+ productization (config generator and automated benefit measurement only if Phase 2 clears the withdrawal criteria)
+- Roadmap: the existing Phase 2 evidence program remains active; the approved 2026-07-20 track adds pinned invariants, adversarial recovery conformance, verifier independence, and a pre-registered compact-boundary benchmark. Composition effect remains unmeasured.
 - License: MIT — [LICENSE](LICENSE)
 
 <!-- BEGIN GENERATED ENGINEERING HANDBOOK -->

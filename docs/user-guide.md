@@ -168,6 +168,16 @@ python3 scripts/check_state.py --repo /path/to/consumer-repo
 
 Exit `0` = pass (or no state), `2` = stale (rebuild before use), `1` = invalid or unsafe (ignore it). The full authority boundary is [state-trust-contract.md](state-trust-contract.md).
 
+Projects that adopt `config/pinned-invariants.json` can gate both the reviewed
+project invariants and live state in one read-only command:
+
+```bash
+python3 scripts/check_recovery.py --repo /path/to/consumer-repo
+```
+
+See [pinned-invariants-contract.md](pinned-invariants-contract.md) before
+interpreting `ACCEPT`; it still requires fresh source and verifier evidence.
+
 The state file uses the same 10 sections as compact-plus, so handoffs can cross runtimes. Design details: [codex/adapter-design.md](codex/adapter-design.md).
 
 ## 6. Measuring instead of believing: `scripts/ascs.py`

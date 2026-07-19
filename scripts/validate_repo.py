@@ -163,6 +163,25 @@ CODEX_COMPACT_EVENTS = {
     "PostCompact": "^(manual|auto)$",
     "SessionStart": "^compact$",
 }
+PINNED_INVARIANT_ASSETS = (
+    "config/pinned-invariants.json",
+    "schemas/pinned-invariants.schema.json",
+    "templates/pinned-invariants.json",
+    "scripts/check_recovery.py",
+    "docs/pinned-invariants-contract.md",
+    "docs/session-continuity-roadmap.md",
+    "tests/fixtures/recovery/valid-pinned-invariants.json",
+    "tests/fixtures/recovery/authority-escalation.json",
+    "tests/fixtures/recovery/repository-mismatch.json",
+)
+PINNED_INVARIANT_APPROVAL_GATES = {
+    "external_send",
+    "expensive_api",
+    "production_change",
+    "confidential_data",
+    "destructive_or_irreversible",
+    "tool_capability_escalation",
+}
 
 
 def is_within(path, root):
@@ -946,6 +965,91 @@ def validate_state_scaffolds(root):
     return errors
 
 
+def validate_pinned_invariant_assets(root):
+    """Keep the recovery gate, contract, and adversarial fixtures aligned."""
+    errors = []
+    for relative in PINNED_INVARIANT_ASSETS:
+        if not (root / relative).is_file():
+            errors.append(f"{relative}: required pinned-invariant asset is missing")
+    if errors:
+        return errors
+
+    def load(relative):
+        try:
+            return json.loads((root / relative).read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            errors.append(f"{relative}: cannot validate pinned invariant asset: {exc}")
+            return {}
+
+    config = load("config/pinned-invariants.json")
+    schema = load("schemas/pinned-invariants.schema.json")
+    template = load("templates/pinned-invariants.json")
+    valid_fixture = load("tests/fixtures/recovery/valid-pinned-invariants.json")
+    authority_fixture = load("tests/fixtures/recovery/authority-escalation.json")
+    repository_fixture = load("tests/fixtures/recovery/repository-mismatch.json")
+
+    for label, payload in (
+        ("config/pinned-invariants.json", config),
+        ("templates/pinned-invariants.json", template),
+        ("tests/fixtures/recovery/valid-pinned-invariants.json", valid_fixture),
+    ):
+        authority = payload.get("authority", {}) if isinstance(payload, dict) else {}
+        recovery = payload.get("recovery", {}) if isinstance(payload, dict) else {}
+        if authority.get("state_may_expand_authority") is not False:
+            errors.append(f"{label}: state_may_expand_authority must be false")
+        if authority.get("state_may_grant_approval") is not False:
+            errors.append(f"{label}: state_may_grant_approval must be false")
+        if set(authority.get("current_approval_required_for", [])) != PINNED_INVARIANT_APPROVAL_GATES:
+            errors.append(f"{label}: current approval gates are incomplete")
+        if recovery.get("require_fresh_source_check") is not True:
+            errors.append(f"{label}: fresh source check must be required")
+        if recovery.get("require_fresh_verification") is not True:
+            errors.append(f"{label}: fresh verification must be required")
+        if recovery.get("on_repository_mismatch") != "REJECT":
+            errors.append(f"{label}: repository mismatch must REJECT")
+        if recovery.get("on_uncommitted_invariant_change") != "REVERIFY":
+            errors.append(f"{label}: uncommitted invariant change must REVERIFY")
+
+    if config.get("repository") != "House-lovers7/agent-session-control-stack":
+        errors.append("config/pinned-invariants.json: canonical repository mismatch")
+    for index, invariant in enumerate(config.get("protected_invariants", [])):
+        source = invariant.get("source") if isinstance(invariant, dict) else None
+        if not isinstance(source, str) or not (root / source).is_file():
+            errors.append(
+                f"config/pinned-invariants.json: protected_invariants[{index}] source is missing"
+            )
+
+    authority = authority_fixture.get("authority", {})
+    if authority.get("state_may_grant_approval") is not True:
+        errors.append(
+            "tests/fixtures/recovery/authority-escalation.json: attack fixture must attempt approval transfer"
+        )
+    if repository_fixture.get("repository") == "example/project":
+        errors.append(
+            "tests/fixtures/recovery/repository-mismatch.json: attack fixture must use a different repository"
+        )
+    if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
+        errors.append("schemas/pinned-invariants.schema.json: expected JSON Schema 2020-12")
+
+    script_text = (root / "scripts/check_recovery.py").read_text(encoding="utf-8")
+    for marker in ("ACCEPT", "REVERIFY", "REBUILD", "REJECT", "inspect_state"):
+        if marker not in script_text:
+            errors.append(f"scripts/check_recovery.py: missing recovery marker {marker!r}")
+    contract_text = (root / "docs/pinned-invariants-contract.md").read_text(encoding="utf-8")
+    for marker in (
+        "The invariant file is not a cryptographic trust anchor",
+        "Recovery state cannot expand authority or grant approval",
+        "Passing these fixtures is a contract check",
+    ):
+        if marker not in contract_text:
+            errors.append(f"docs/pinned-invariants-contract.md: missing boundary {marker!r}")
+    roadmap_text = (root / "docs/session-continuity-roadmap.md").read_text(encoding="utf-8")
+    for marker in ("Specification", "Conformance suite", "Research harness", "Compact Boundary Benchmark"):
+        if marker not in roadmap_text:
+            errors.append(f"docs/session-continuity-roadmap.md: missing roadmap marker {marker!r}")
+    return errors
+
+
 def validate(root=REPO_ROOT, require_upstream_lock=False):
     root = Path(root).resolve()
     errors = []
@@ -961,6 +1065,7 @@ def validate(root=REPO_ROOT, require_upstream_lock=False):
     errors.extend(validate_upstream_lock(root, require=require_upstream_lock))
     errors.extend(validate_reviewed_plugin_snapshot(root))
     errors.extend(validate_state_scaffolds(root))
+    errors.extend(validate_pinned_invariant_assets(root))
     return errors
 
 
@@ -982,7 +1087,7 @@ def main(argv=None):
         "Repository validation passed (JSON, manifests, links, doctor safety, "
         "implementation status, improvement loop, compact-plus synthetic smoke, "
         "Codex native compact hook and synthetic smoke, "
-        "upstream lock, reviewed plugin snapshot, state trust)."
+        "upstream lock, reviewed plugin snapshot, state trust, pinned invariants)."
     )
     return 0
 
