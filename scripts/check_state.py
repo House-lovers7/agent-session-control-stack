@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import stat
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -64,6 +66,84 @@ def issue(severity: str, code: str, message: str, path: str | None = None) -> di
     return result
 
 
+def read_state_files(repo: Path, relative_state: Path):
+    """Read through pinned directory descriptors; never follow state links.
+
+    O_NONBLOCK prevents a swapped-in FIFO from waiting for a writer. fstat
+    validates the opened file, and the bounded read also catches file growth.
+    """
+    files = {}
+    issues = []
+    if not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")):
+        return {}, [issue("FAIL", "state_io_unsupported", "safe state inspection requires POSIX file operations")], False
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+    def failure(code, message, path):
+        issues.append(issue("FAIL", code, message, path.as_posix()))
+
+    def scan(directory_fd, relative):
+        try:
+            with os.scandir(directory_fd) as entries:
+                names = sorted(entry.name for entry in entries)
+            for name in names:
+                path = relative / name
+                info = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode):
+                    failure("state_symlink", "state paths must not be symbolic links", path)
+                elif stat.S_ISDIR(info.st_mode):
+                    if name == ".rollback":
+                        continue
+                    if path.suffix == ".md":
+                        failure("state_not_file", "state must be a regular file", path)
+                        continue
+                    child_fd = os.open(name, directory_flags, dir_fd=directory_fd)
+                    try:
+                        scan(child_fd, path)
+                    finally:
+                        os.close(child_fd)
+                elif path.suffix == ".md":
+                    if not stat.S_ISREG(info.st_mode):
+                        failure("state_not_file", "state must be a regular file", path)
+                        continue
+                    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                 dir_fd=directory_fd)
+                    with os.fdopen(fd, "rb") as handle:
+                        opened = os.fstat(handle.fileno())
+                        if not stat.S_ISREG(opened.st_mode):
+                            failure("state_not_file", "state must be a regular file", path)
+                            continue
+                        if opened.st_size > MAX_STATE_FILE_BYTES:
+                            failure("state_too_large", "state file exceeds 256 KiB", path)
+                            continue
+                        data = handle.read(MAX_STATE_FILE_BYTES + 1)
+                    if len(data) > MAX_STATE_FILE_BYTES:
+                        failure("state_too_large", "state file exceeds 256 KiB", path)
+                        continue
+                    try:
+                        files[repo / path] = data.decode("utf-8")
+                    except UnicodeError:
+                        failure("state_unreadable", "state file is not UTF-8", path)
+        except OSError:
+            failure("state_unreadable", "state directory cannot be inspected safely", relative)
+
+    directory_fd = None
+    try:
+        directory_fd = os.open(repo, directory_flags)
+        for part in relative_state.parts:
+            next_fd = os.open(part, directory_flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = next_fd
+        scan(directory_fd, relative_state)
+    except FileNotFoundError:
+        return {}, [], True
+    except (OSError, AttributeError, NotImplementedError):
+        failure("state_unreadable", "state path cannot be inspected without following links", relative_state)
+    finally:
+        if directory_fd is not None:
+            os.close(directory_fd)
+    return files, issues, False
+
+
 def inspect_state(
     repo: Path,
     state_dir: Path,
@@ -71,29 +151,30 @@ def inspect_state(
     expected_session_id: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, object]:
+    raw_repo = repo.absolute()
+    raw_state = state_dir if state_dir.is_absolute() else raw_repo / state_dir
     repo = repo.resolve()
-    state_dir = state_dir.resolve()
     try:
-        state_dir.relative_to(repo)
+        # Keep the state path lexical so in-repo links cannot disappear during resolve.
+        anchor = raw_repo if raw_state.is_relative_to(raw_repo) else repo
+        relative_state = raw_state.relative_to(anchor)
+        if ".." in relative_state.parts:
+            raise ValueError("state path contains parent traversal")
     except ValueError:
         return {
             "status": "FAIL",
             "issues": [issue("FAIL", "state_outside_repo", "state directory escapes repository")],
         }
-    if not state_dir.exists():
+    files, scan_issues, absent = read_state_files(repo, relative_state)
+    if absent or (not files and not scan_issues):
         return {"status": "ABSENT", "issues": [], "files_checked": 0}
-    if not state_dir.is_dir():
-        return {
-            "status": "FAIL",
-            "issues": [issue("FAIL", "state_not_directory", "state path is not a directory")],
-        }
 
     branch = git_value(repo, "branch", "--show-current")
     commit = git_value(repo, "rev-parse", "HEAD")
     if repository is None:
         remote = git_value(repo, "config", "--get", "remote.origin.url")
         repository = repository_from_remote(remote or "")
-    context_issues = []
+    context_issues = list(scan_issues)
     if repository is None:
         context_issues.append(
             issue(
@@ -109,35 +190,11 @@ def inspect_state(
     if not commit or not COMMIT_SHA.fullmatch(commit):
         context_issues.append(issue("FAIL", "commit_unknown", "cannot determine current commit"))
 
-    files = sorted(
-        path
-        for path in state_dir.rglob("*.md")
-        if ".rollback" not in path.relative_to(state_dir).parts
-    )
-    if not files:
-        return {"status": "ABSENT", "issues": [], "files_checked": 0}
     metadata_entries: list[tuple[str, dict[str, str]]] = []
     now = now or datetime.now(timezone.utc)
-    for path in files:
+    for path, text in sorted(files.items()):
         relative = path.relative_to(repo).as_posix()
-        if path.is_symlink():
-            context_issues.append(
-                issue("FAIL", "state_symlink", "state files must not be symbolic links", relative)
-            )
-            continue
-        try:
-            if path.stat().st_size > MAX_STATE_FILE_BYTES:
-                context_issues.append(
-                    issue("FAIL", "state_too_large", "state file exceeds 256 KiB", relative)
-                )
-                continue
-            metadata, errors = parse_state_metadata(path, repo)
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            context_issues.append(
-                issue("FAIL", "state_unreadable", "state file cannot be read safely", relative)
-            )
-            continue
+        metadata, errors = parse_state_metadata(path, repo, text=text)
         for error in errors:
             context_issues.append(issue("FAIL", "metadata_invalid", error, relative))
         if re.search(

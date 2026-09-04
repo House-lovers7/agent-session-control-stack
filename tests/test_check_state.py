@@ -163,6 +163,35 @@ expires_at: {expires}
         with patch("os.scandir", side_effect=PermissionError("synthetic")):
             self.assertEqual(self.inspect()["status"], "FAIL")
 
+    def test_markdown_directory_is_not_treated_as_absent_state(self):
+        (self.state_dir / "handoff.md").mkdir()
+        self.assertEqual(self.inspect()["status"], "FAIL")
+
+    def test_link_in_custom_state_parent_is_rejected(self):
+        parent = self.repo / "alias"
+        parent.symlink_to(self.state_dir, target_is_directory=True)
+        (self.state_dir / "nested").mkdir()
+        result = check_state.inspect_state(
+            self.repo, parent / "nested", repository="example/project", now=self.now
+        )
+        self.assertEqual(result["status"], "FAIL")
+
+    def test_file_replaced_with_fifo_before_open_is_rejected(self):
+        self.write_state()
+        original_open = os.open
+
+        def swap_before_open(path, flags, *args, **kwargs):
+            if path == "handoff.md":
+                target = self.state_dir / path
+                target.unlink()
+                os.mkfifo(target)
+                # This assertion prevents a regressed implementation from hanging the test.
+                self.assertTrue(flags & os.O_NONBLOCK)
+            return original_open(path, flags, *args, **kwargs)
+
+        with patch.object(check_state.os, "open", side_effect=swap_before_open):
+            self.assertEqual(self.inspect()["status"], "FAIL")
+
     def test_malformed_metadata_is_not_echoed_by_cli(self):
         for insertion in ("SYNTHETIC_PRIVATE_LINE", "SYNTHETIC_PRIVATE_KEY: a\nSYNTHETIC_PRIVATE_KEY: b"):
             with self.subTest(insertion=insertion):
