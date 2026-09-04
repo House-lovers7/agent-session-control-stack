@@ -35,6 +35,14 @@ stale and rebuild-before-use, and exit 1 means invalid or unsafe and ignore.
 The checker reports metadata and issue codes only; it never prints state file
 contents.
 
+The checker rejects symbolic links in the state tree (including directory links),
+non-regular Markdown files, and filesystem inspection errors. On POSIX systems,
+it opens paths relative to pinned directory descriptors without following links,
+and reads each state file once with a 256 KiB limit. Unsupported safe file
+operations fail closed. Metadata syntax errors report block line numbers, never
+the offending line or unknown key. This is a check of the observed files, not an
+atomic snapshot or a guarantee that files cannot change before later use.
+
 1. Compare `repository` with the current canonical repository identity. A
    repository mismatch means ignore the entire state set; do not cherry-pick
    instructions from it.

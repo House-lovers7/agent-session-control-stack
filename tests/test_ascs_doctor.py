@@ -5,9 +5,11 @@ import os
 import socket
 import subprocess
 import unittest
+import tracemalloc
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +59,71 @@ def listening_socket():
 
 
 class TestAscsDoctor(unittest.TestCase):
+    def test_chunked_hash_matches_existing_digest_and_enforces_total_budget(self):
+        doctor = load_doctor_helper()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.bin").write_bytes(b"abc" * (512 * 1024))
+            (root / "b.bin").write_bytes(b"def" * (512 * 1024))
+            self.assertEqual(doctor.hash_plugin_tree(root), hash_fixture_tree(root))
+            with patch.object(doctor, "PLUGIN_TREE_BYTE_LIMIT", 2 * 1024 * 1024):
+                with self.assertRaises(ValueError):
+                    doctor.hash_plugin_tree(root)
+
+    def test_managed_policy_execution_states(self):
+        doctor = load_doctor_helper()
+        for settings, expected in (
+            ({"disableAllHooks": True}, "DISABLED"),
+            ({"allowManagedHooksOnly": True}, "UNKNOWN"),
+            ({"disableAllHooks": "invalid"}, "UNKNOWN"),
+        ):
+            with self.subTest(settings=settings), TemporaryDirectory() as tmp:
+                path = Path(tmp) / "managed.json"
+                path.write_text(json.dumps(settings))
+                with patch.object(doctor, "settings_sources", return_value=[(path, "file-managed settings")]):
+                    self.assertTrue(doctor.inspect_hook_settings()["plugin_execution"].startswith(expected))
+
+    def test_oversize_plugin_file_is_rejected_without_full_allocation(self):
+        doctor = load_doctor_helper()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (root / "large.bin").open("wb") as handle:
+                handle.truncate(8 * 1024 * 1024)
+            with patch.object(doctor, "PLUGIN_TREE_BYTE_LIMIT", 1024 * 1024):
+                tracemalloc.start()
+                try:
+                    with self.assertRaises(ValueError):
+                        doctor.hash_plugin_tree(root)
+                    self.assertLess(tracemalloc.get_traced_memory()[1], 2 * 1024 * 1024)
+                finally:
+                    tracemalloc.stop()
+
+    def test_disabled_hooks_are_distinguished_from_enabled_plugins(self):
+        result = self.run_doctor(
+            [{"id": "session-health@test", "enabled": True},
+             {"id": "compact-plus@test", "enabled": True}],
+            local_settings={"disableAllHooks": True},
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("plugin: ENABLED", result.stdout)
+        self.assertEqual(result.stdout.count("hook execution: DISABLED"), 3)
+
+    def test_managed_hooks_survive_local_disable(self):
+        doctor = load_doctor_helper()
+        with TemporaryDirectory() as tmp:
+            local = Path(tmp) / "local.json"
+            managed = Path(tmp) / "managed.json"
+            local.write_text(json.dumps({"disableAllHooks": True}))
+            managed.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [
+                {"type": "command", "command": "touch claude-compact-warn/test"}
+            ]}]}}))
+            with patch.object(doctor, "settings_sources", return_value=[
+                (local, "project-local settings"), (managed, "file-managed settings")
+            ]):
+                producers, incomplete = doctor.configured_producers()
+            self.assertFalse(incomplete)
+            self.assertIn("file-managed settings", producers)
+
     def test_plugin_tree_digest_detects_same_version_content_change(self):
         doctor = load_doctor_helper()
         with TemporaryDirectory() as tmp:
@@ -416,7 +483,7 @@ class TestAscsDoctor(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("project settings", result.stdout)
 
-    def test_disable_all_hooks_clears_known_producers(self):
+    def test_disable_all_hooks_prevents_plugin_conflict_but_keeps_statusline_warning(self):
         result = self.run_doctor(
             [
                 {"id": "session-health@test", "enabled": True},
@@ -428,7 +495,8 @@ class TestAscsDoctor(unittest.TestCase):
             local_settings={"disableAllHooks": True},
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("NO CONFIRMED CONFLICT", result.stdout)
+        self.assertIn("compact-warn producer found", result.stdout)
+        self.assertIn("hook execution: DISABLED", result.stdout)
         self.assertNotIn("CONFLICT:", result.stdout)
 
     def test_project_local_allow_managed_hooks_only_cannot_hide_project_producer(self):

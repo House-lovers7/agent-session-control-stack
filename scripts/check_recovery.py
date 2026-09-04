@@ -121,17 +121,14 @@ def validate_document(payload: object) -> list[dict[str, str]]:
                 )
             )
         required = authority.get("current_approval_required_for")
-        if not isinstance(required, list) or set(required) != set(APPROVAL_GATES):
+        if not isinstance(required, list) or any(not isinstance(value, str) for value in required):
             issues.append(
-                issue(
-                    "REJECT",
-                    "approval_gates_incomplete",
-                    "all approval gates must require current trusted approval",
-                )
+                issue("REJECT", "approval_gates_invalid", "approval gates must be a list of strings")
             )
-        elif any(not isinstance(value, str) for value in required):
+        elif set(required) != set(APPROVAL_GATES):
             issues.append(
-                issue("REJECT", "approval_gates_invalid", "approval gates must be strings")
+                issue("REJECT", "approval_gates_incomplete",
+                      "all approval gates must require current trusted approval")
             )
 
     recovery = payload.get("recovery")

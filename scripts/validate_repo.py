@@ -843,24 +843,25 @@ def validate_reviewed_plugin_snapshot(root):
     return errors
 
 
-def parse_state_metadata(path, root):
+def parse_state_metadata(path, root, *, text=None):
     relative = path.relative_to(root)
-    text = path.read_text(encoding="utf-8")
+    if text is None:
+        text = path.read_text(encoding="utf-8")
     matches = list(STATE_METADATA_BLOCK.finditer(text))
     if len(matches) != 1:
         return None, [f"{relative}: expected exactly one ascs-state-metadata block"]
     metadata = {}
     errors = []
-    for line in matches[0].group("body").splitlines():
+    for line_number, line in enumerate(matches[0].group("body").splitlines(), start=1):
         if not line.strip():
             continue
         if ":" not in line:
-            errors.append(f"{relative}: malformed metadata line: {line!r}")
+            errors.append(f"{relative}: malformed metadata at block line {line_number}")
             continue
         key, value = line.split(":", 1)
         key, value = key.strip(), value.strip()
         if key in metadata:
-            errors.append(f"{relative}: duplicate metadata key {key!r}")
+            errors.append(f"{relative}: duplicate metadata key at block line {line_number}")
         metadata[key] = value
     if set(metadata) != set(STATE_METADATA_KEYS):
         errors.append(

@@ -7,6 +7,7 @@ import os
 import platform
 import re
 import socket
+import stat
 import subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -69,6 +70,8 @@ def hash_plugin_tree(root):
     file is included. Links, special files, oversized trees, and trees that
     change shape while being read fail closed.
     """
+    if not all(hasattr(os, name) for name in ("O_NOFOLLOW", "O_NONBLOCK")):
+        raise ValueError("safe plugin hashing requires POSIX file operations")
     candidate = Path(root)
     if candidate.is_symlink():
         raise ValueError("plugin root link is not trusted")
@@ -96,12 +99,29 @@ def hash_plugin_tree(root):
 
     digest = hashlib.sha256()
     for relative, path in sorted(entries):
-        data = path.read_bytes()
-        total_bytes += len(data)
-        if total_bytes > PLUGIN_TREE_BYTE_LIMIT:
-            raise ValueError("plugin tree is too large")
+        file_digest = hashlib.sha256()
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as handle:
+            before = os.fstat(handle.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise ValueError("plugin tree contains a special file")
+            if before.st_size > PLUGIN_TREE_BYTE_LIMIT - total_bytes:
+                raise ValueError("plugin tree is too large")
+            while True:
+                chunk = handle.read(min(1024 * 1024, PLUGIN_TREE_BYTE_LIMIT - total_bytes + 1))
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > PLUGIN_TREE_BYTE_LIMIT:
+                    raise ValueError("plugin tree is too large")
+                file_digest.update(chunk)
+            after = os.fstat(handle.fileno())
+            if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_size, after.st_mtime_ns, after.st_ctime_ns
+            ):
+                raise ValueError("plugin file changed while being read")
         record = json.dumps(
-            [relative, hashlib.sha256(data).hexdigest()],
+            [relative, file_digest.hexdigest()],
             ensure_ascii=True,
             separators=(",", ":"),
         )
@@ -463,12 +483,13 @@ def read_settings(path):
         return False
 
 
-def configured_producers():
+def inspect_hook_settings():
     """Resolve known statusLine precedence and additive hook producers."""
     effective_statusline = None
     effective_statusline_label = None
     effective_disable_all_hooks = False
     effective_managed_hooks_only = False
+    managed_disable_all_hooks = False
     hook_labels = []
     incomplete = False
     for path, label in settings_sources():
@@ -491,6 +512,8 @@ def configured_producers():
         if "disableAllHooks" in settings:
             if isinstance(settings["disableAllHooks"], bool):
                 effective_disable_all_hooks = settings["disableAllHooks"]
+                if is_managed:
+                    managed_disable_all_hooks = settings["disableAllHooks"]
             else:
                 incomplete = True
         if is_managed and "allowManagedHooksOnly" in settings:
@@ -499,19 +522,33 @@ def configured_producers():
             else:
                 incomplete = True
 
-    if effective_disable_all_hooks:
-        return [], incomplete
-
+    # Local disableAllHooks cannot disable managed hooks. Status lines are
+    # separate from lifecycle hooks and may still write warning markers.
+    # https://code.claude.com/docs/en/hooks#disable-or-remove-hooks (2026-09-05)
     labels = [
         label
         for label, is_managed in hook_labels
-        if not effective_managed_hooks_only or is_managed
+        if (not managed_disable_all_hooks if is_managed else
+            not effective_disable_all_hooks and not effective_managed_hooks_only)
     ]
     if contains_marker(effective_statusline) and effective_statusline_label:
         labels.append(effective_statusline_label)
-    # Preserve order while removing duplicate, fixed labels.
-    labels = list(dict.fromkeys(labels))
-    return labels, incomplete
+    if incomplete:
+        execution = "UNKNOWN (settings incomplete)"
+    elif effective_disable_all_hooks:
+        execution = "DISABLED (disableAllHooks)"
+    elif effective_managed_hooks_only:
+        execution = "UNKNOWN (managed hooks only; plugin dispatch unverified)"
+    else:
+        execution = "UNVERIFIED (not blocked by inspected settings)"
+    return {"producers": list(dict.fromkeys(labels)), "incomplete": incomplete,
+            "plugin_execution": execution}
+
+
+def configured_producers():
+    """Compatibility wrapper for known marker producers."""
+    settings = inspect_hook_settings()
+    return settings["producers"], settings["incomplete"]
 
 
 def warn_marker_present():
@@ -588,19 +625,23 @@ def plugin_message(status, enabled_detail):
     ).format(name)
 
 
-def report_plugins(session_health, compact_plus):
+def report_plugins(session_health, compact_plus, hook_execution="UNVERIFIED"):
     for status in (session_health, compact_plus):
         if status.get("state") not in VALID_PLUGIN_STATES:
             status["state"] = "UNKNOWN"
+    execution_note = "; hook execution: " + hook_execution
     say(
         "  2 Health        "
         + plugin_message(
-            session_health, "reviewed version; single compact decider"
+            session_health, "reviewed version"
         )
+        + (execution_note if session_health["state"] == "ENABLED" else "")
     )
     compact_message = plugin_message(
         compact_plus, "reviewed version and content"
     )
+    if compact_plus["state"] == "ENABLED":
+        compact_message += execution_note
     say("  3 Checkpoint    " + compact_message)
     say("  4 Recovery      " + compact_message)
     return any(
@@ -609,8 +650,14 @@ def report_plugins(session_health, compact_plus):
     )
 
 
-def report_single_decider(session_health, compact_plus):
-    producers, settings_incomplete = configured_producers()
+def report_single_decider(session_health, compact_plus, settings=None):
+    settings = settings if settings is not None else inspect_hook_settings()
+    producers, settings_incomplete = settings["producers"], settings["incomplete"]
+    execution = settings["plugin_execution"]
+    if execution.startswith(("DISABLED", "UNKNOWN")):
+        replacement = "DISABLED" if execution.startswith("DISABLED") else "UNKNOWN"
+        session_health = replacement if session_health == "ENABLED" else session_health
+        compact_plus = replacement if compact_plus == "ENABLED" else compact_plus
     markers = warn_marker_present()
     conflict = False
     if producers:
@@ -646,9 +693,10 @@ def main():
     say("ASCS doctor (read-only) — layer status")
     say()
     report_compression()
-    plugin_mismatch = report_plugins(session_health, compact_plus)
+    settings = inspect_hook_settings()
+    plugin_mismatch = report_plugins(session_health, compact_plus, settings["plugin_execution"])
     say()
-    conflict = report_single_decider(session_health_state, compact_plus_state)
+    conflict = report_single_decider(session_health_state, compact_plus_state, settings)
     say()
     say("Layers are independently adoptable; version/content mismatch and confirmed conflict are actionable failures. Absent, disabled, and unknown states remain informational.")
     say("Upstream credits: pxpipe (teamchong), claude-code-session-health (House-lovers7), compact-plus (u-ichi) — see ATTRIBUTION.md.")
