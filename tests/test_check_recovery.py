@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import subprocess
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -217,6 +218,21 @@ Recovery hint only. Reverify against source.
         )
         self.assertEqual(result["status"], "REBUILD")
         self.assertEqual(result["state"]["status"], "STALE")
+
+    def test_invalid_approval_elements_return_reject_json(self):
+        for element in ({}, [], None, 1):
+            with self.subTest(element=element):
+                path = self.write_invariants()
+                payload = json.loads(path.read_text())
+                payload["authority"]["current_approval_required_for"] = [element]
+                path.write_text(json.dumps(payload))
+                proc = subprocess.run(
+                    [sys.executable, "-B", str(CHECKER_PATH), "--repo", str(self.repo),
+                     "--invariants-only", "--json"], capture_output=True, text=True, timeout=3,
+                )
+                self.assertEqual(proc.returncode, 1)
+                self.assertEqual(json.loads(proc.stdout)["status"], "REJECT")
+                self.assertNotIn("Traceback", proc.stderr)
 
 
 if __name__ == "__main__":

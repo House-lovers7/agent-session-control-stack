@@ -5,9 +5,11 @@ import os
 import socket
 import subprocess
 import unittest
+import tracemalloc
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +59,47 @@ def listening_socket():
 
 
 class TestAscsDoctor(unittest.TestCase):
+    def test_oversize_plugin_file_is_rejected_without_full_allocation(self):
+        doctor = load_doctor_helper()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (root / "large.bin").open("wb") as handle:
+                handle.truncate(8 * 1024 * 1024)
+            with patch.object(doctor, "PLUGIN_TREE_BYTE_LIMIT", 1024 * 1024):
+                tracemalloc.start()
+                try:
+                    with self.assertRaises(ValueError):
+                        doctor.hash_plugin_tree(root)
+                    self.assertLess(tracemalloc.get_traced_memory()[1], 2 * 1024 * 1024)
+                finally:
+                    tracemalloc.stop()
+
+    def test_disabled_hooks_are_distinguished_from_enabled_plugins(self):
+        result = self.run_doctor(
+            [{"id": "session-health@test", "enabled": True},
+             {"id": "compact-plus@test", "enabled": True}],
+            local_settings={"disableAllHooks": True},
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("plugin: ENABLED", result.stdout)
+        self.assertEqual(result.stdout.count("hook execution: DISABLED"), 3)
+
+    def test_managed_hooks_survive_local_disable(self):
+        doctor = load_doctor_helper()
+        with TemporaryDirectory() as tmp:
+            local = Path(tmp) / "local.json"
+            managed = Path(tmp) / "managed.json"
+            local.write_text(json.dumps({"disableAllHooks": True}))
+            managed.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [
+                {"type": "command", "command": "touch claude-compact-warn/test"}
+            ]}]}}))
+            with patch.object(doctor, "settings_sources", return_value=[
+                (local, "project-local settings"), (managed, "file-managed settings")
+            ]):
+                producers, incomplete = doctor.configured_producers()
+            self.assertFalse(incomplete)
+            self.assertIn("file-managed settings", producers)
+
     def test_plugin_tree_digest_detects_same_version_content_change(self):
         doctor = load_doctor_helper()
         with TemporaryDirectory() as tmp:

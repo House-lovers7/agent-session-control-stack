@@ -1,9 +1,12 @@
+import json
+import os
 import subprocess
 import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -136,6 +139,62 @@ expires_at: {expires}
             "owner/project",
         )
         self.assertIsNone(check_state.repository_from_remote("/local/path/project"))
+
+    def test_directory_links_are_rejected_even_without_markdown_files(self):
+        with TemporaryDirectory() as outside:
+            (Path(outside) / "checkpoint.md").write_text("unvalidated")
+            (self.state_dir / "state").symlink_to(outside, target_is_directory=True)
+            for with_handoff in (False, True):
+                with self.subTest(with_handoff=with_handoff):
+                    if with_handoff:
+                        self.write_state()
+                    self.assertEqual(self.inspect()["status"], "FAIL")
+
+    def test_state_root_link_inside_repo_is_rejected(self):
+        self.state_dir.rmdir()
+        actual = self.repo / "actual-state"
+        actual.mkdir()
+        self.state_dir.symlink_to(actual, target_is_directory=True)
+        self.write_state()
+        self.assertEqual(self.inspect()["status"], "FAIL")
+
+    def test_scan_errors_fail_closed(self):
+        self.write_state()
+        with patch("os.scandir", side_effect=PermissionError("synthetic")):
+            self.assertEqual(self.inspect()["status"], "FAIL")
+
+    def test_malformed_metadata_is_not_echoed_by_cli(self):
+        for insertion in ("SYNTHETIC_PRIVATE_LINE", "SYNTHETIC_PRIVATE_KEY: a\nSYNTHETIC_PRIVATE_KEY: b"):
+            with self.subTest(insertion=insertion):
+                self.write_state()
+                path = self.state_dir / "handoff.md"
+                path.write_text(path.read_text().replace("state_schema_version: 1", insertion + "\nstate_schema_version: 1"))
+                for output_args in ([], ["--json"]):
+                    proc = subprocess.run(
+                        [sys.executable, "-B", str(REPO_ROOT / "scripts/check_state.py"),
+                         "--repo", str(self.repo), "--repository", "example/project", *output_args],
+                        capture_output=True, text=True, timeout=3,
+                    )
+                    self.assertEqual(proc.returncode, 1)
+                    self.assertNotIn("SYNTHETIC_PRIVATE", proc.stdout + proc.stderr)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_fifo_is_rejected_without_waiting_for_writer(self):
+        os.mkfifo(self.state_dir / "handoff.md")
+        proc = subprocess.run(
+            [sys.executable, "-B", str(REPO_ROOT / "scripts/check_state.py"),
+             "--repo", str(self.repo), "--repository", "example/project", "--json"],
+            capture_output=True, text=True, timeout=3,
+        )
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(json.loads(proc.stdout)["status"], "FAIL")
+
+    def test_rollback_is_excluded_and_regular_state_still_passes(self):
+        self.write_state()
+        rollback = self.state_dir / ".rollback"
+        rollback.mkdir()
+        (rollback / "old.md").write_text("expired unvalidated backup")
+        self.assertEqual(self.inspect()["status"], "PASS")
 
 
 if __name__ == "__main__":
