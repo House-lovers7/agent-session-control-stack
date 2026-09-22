@@ -7,7 +7,6 @@ import argparse
 import json
 import re
 import subprocess
-import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
