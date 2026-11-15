@@ -2,6 +2,21 @@
 
 [![tests](https://github.com/House-lovers7/agent-session-control-stack/actions/workflows/test.yml/badge.svg)](https://github.com/House-lovers7/agent-session-control-stack/actions/workflows/test.yml)
 
+## How this ended (2026-11-15): this repository is archived
+
+- The last merge to main was on 2026-07-12 and the last development commit on 2026-07-20. The final 14 commits are not on main; they stay on the branch `agent/docs-agent-session-control-stack-20260716`, which conflicts with the doctor 0.2.0 change on main and was left unresolved. The only later work is two small unmerged fix PRs from 2026-09.
+- There are no external users. The combined effect of the layers was never measured: Experiment 002 had its speed claim corrected, 003 was void, 004 stopped without a valid comparison, and 005 was never run.
+- In 2026-11 I checked what happens without the recovery layer. With compact-plus disabled, I examined the turns after 1,283 automatic compactions between 2026-10-01 and 2026-11-14. Under the criteria fixed in advance, the result was "little harm".
+  - In 50 hand-reviewed compactions: 1 dropped constraint, 0 repeated failures, 0 corrections by the user.
+  - A command that had failed before the compaction was repeated unchanged in 4 of 18,073 Bash calls after compaction, against 7 of 19,486 in the pre-compaction control.
+  - 46.6% of the 2,257 Read calls after compaction re-read a file the session had already touched. The cost of compaction showed up as re-reading rather than as harm.
+- Limits: this is observational data, not a comparison against sessions with ASCS installed, and the hand review had a single rater.
+- The core rule is still in use: summary and state are untrusted hypotheses; current source and fresh evidence are truth.
+
+Everything below describes the repository as it was when archived and is no longer updated.
+
+---
+
 A reference architecture and lightweight tooling layer for controlling long-running AI coding agent sessions.
 
 ASCS helps you compose:
